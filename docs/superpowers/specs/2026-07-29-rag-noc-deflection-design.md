@@ -1,7 +1,10 @@
 # RAG for NOC Call Deflection — Design
 
 **Date:** 2026-07-29
-**Status:** Approved (design); failure catalog scheduled for expansion (see §10.10)
+**Revised:** 2026-07-30 — v1.5, incorporating the *Document Intelligence* series
+(§16). The revision changed the complexity ladder, the evaluation reporting rule,
+and the position of reranking. See §5.4.
+**Status:** Approved (design); failure catalog at v1.5 (see §10.10)
 **Author:** phucvd
 
 ---
@@ -28,9 +31,13 @@ motivation for the project and the opening of the presentation.
 2. **Actionable transfer (public).** Colleagues leave a ~2 hour session able to
    picture the concepts, choose a fitting solution for their own problem, and
    know the vocabulary to search with when stuck.
-3. **Two teaching principles above all:**
+3. **Four teaching principles above all:**
    - **Start simple.** Add a component only when a measurement demands it.
    - **Never guess.** Retrieval quality is measured, not asserted.
+   - **Structure before semantics.** Deterministic filtering and routing are
+     cheaper and more reliable than better ranking.
+   - **Evaluate per failure mode, not in aggregate.** A single headline score
+     hides which failures remain.
 4. **A failure catalog** as the durable take-home artifact — best practice taught
    through failure modes rather than feature tours.
 
@@ -53,7 +60,7 @@ The session succeeds if a colleague can afterwards:
 | # | Outcome | How we know |
 |---|---|---|
 | S1 | Decide whether their problem needs RAG at all | They can state a case where grep or long context is the better answer |
-| S2 | Pick a stack tier for their problem | They can point at a row of the decision matrix (§10) and justify it |
+| S2 | Pick a stack tier for their problem | They can point at a row of the decision matrix (§11) and justify it |
 | S3 | Diagnose a bad RAG result | They can name the failing stage and the search term for the fix |
 | S4 | Refuse to trust an unmeasured claim | They ask "what's the baseline?" when someone demos a RAG system |
 | S5 | Reproduce the demo | `docker compose up` on a modest laptop works |
@@ -125,6 +132,25 @@ colleagues face.
 (4–8 GB, 6–8 containers — heavy for the value it adds here). Both appear in the
 decision matrix as graduation targets.
 
+### 5.4 Adopted architectural principles
+
+Taken from the *Document Intelligence* series (§16), whose empirical results
+contradicted the default pipeline this spec originally assumed.
+
+| Principle | Consequence for this system |
+|---|---|
+| **Structure-first retrieval** — filter and route deterministically before embedding similarity | Classify the alert (service, severity, environment) and narrow the corpus *before* semantic search. In that series, classify-before-retrieve reduced a 200,000-document corpus to ~800 |
+| **Deterministic dispatchers over autonomous agents** | A question parser routes by query shape: error codes to exact lookup, "what changed recently" to a recency sort, counting questions to a structured query. No agent decides this at runtime |
+| **Domain vocabulary is a central asset** | A curated map of internal acronyms and Vietnamese↔English term pairs, maintained by the dev team. Cheaper and more reliable than hoping an embedding model absorbed the company's jargon |
+| **Rerankers are a fallback, not a foundation** | Reranking moves to the *end* of the ladder and is expected to fail (§9.2) |
+| **Relational data at every junction, never raw strings** | Pipeline stages exchange structured records — chunk id, source, section path, score, timestamp, service — so any stage's contribution is inspectable |
+| **RAG is search plus generation, not machine learning** | Nothing is trained. Improvements come from architecture and vocabulary, not fitting |
+| **The corpus is controlled and the expert is in the loop** | The system *amplifies* the dev team's knowledge (playbooks, vocabulary, routing rules) rather than replacing it |
+
+The last point reframes the project honestly: this is not an AI that learns
+operations. It is a findability layer over knowledge the team already has —
+which is exactly the failure identified in §1.
+
 ## 6. Corpus design
 
 An authored corpus for a fictional order/payment processing service.
@@ -159,7 +185,11 @@ corpus design — volume is not the point.
 | Question with no answer anywhere in the corpus | INSUFFICIENT verdict — refuse to guess |
 | Repeat incident with an existing playbook | SELF_SERVE verdict — the deflection case |
 | P1-severity incident that also has a playbook | Severity gate must override deflection |
-| Acronym used only in tickets, never defined in docs | Lexical match; vocabulary mismatch |
+| Acronym used only in tickets, never defined in docs | Domain vocabulary map — not an embedding problem |
+| **Signal dilution**: the answer sentence buried inside a ~70-word paragraph among topical distractors | The *one* case where a cross-encoder reliably helps (§9.2) |
+| A negation question — "which services do **not** use the retry queue" | Persistent blind spot; no scorer fixes it. Needs question parsing |
+| A listing/counting question — "how many P2 incidents touched payments last quarter" | Retrieval is the wrong tool; needs a structured query |
+| A term that exists only in the dev team's heads, in neither docs nor tickets | Out-of-domain vocabulary; expert-in-the-loop limit |
 
 ## 7. The product: a triage verdict, not prose
 
@@ -200,20 +230,30 @@ it, is the most credibility-earning part of the presentation.
 Measurement precedes and justifies every architectural addition. Nothing enters
 the pipeline on intuition.
 
-### 8.1 Gold question set — 40 questions
+### 8.1 Gold question set — ~46 questions
+
+Categories are **failure modes, not topics.** Each exists to make one specific
+weakness visible, and each is scored separately (§8.4).
 
 | Category | Count | Proves |
 |---|---|---|
 | Simple factual | 8 | Baseline works at all |
 | Cross-lingual (VI question → EN doc) | 7 | Multilingual embeddings |
 | Exact identifier / error code | 6 | Hybrid search; dense retrieval alone fails |
-| Requires metadata filter (service / recency) | 6 | Filtering |
-| Ambiguous, many plausible chunks | 5 | Reranking |
+| Requires routing or metadata filter | 6 | Structure-first retrieval (§5.4) |
+| **Signal dilution** (buried answer, long chunk) | 5 | The one justified reranker case (§9.2) |
+| **Negation** | 3 | Persistent blind spot — needs question parsing, not ranking |
+| **Listing / counting** | 3 | Retrieval is the wrong tool; needs a structured query |
 | Repeat incident with playbook | 5 | SELF_SERVE deflection |
 | Unanswerable | 3 | INSUFFICIENT — refusal to guess |
 
 Each question records: text, expected source document(s), expected verdict,
-severity, and language.
+severity, language, and **failure-mode category**.
+
+The negation and listing categories are expected to stay unsolved by every
+retrieval rung. They are included precisely for that reason: they demonstrate
+the limit of similarity search and justify the routing layer. A gold set
+containing only questions the system can answer would prove nothing.
 
 ### 8.2 Metrics
 
@@ -234,21 +274,60 @@ LLM-as-judge scores are themselves estimates. A ~10-question human-scored
 subset is retained to sanity-check the judge. Presenting judge scores as ground
 truth would violate the project's own "never guess" principle.
 
+### 8.4 Reporting rule: per failure mode, never aggregate
+
+**Every result is reported as a rung × failure-mode matrix.** A single headline
+number is not produced at all, because averaging is how real regressions hide:
+a rung that lifts factual questions by 15 points while breaking negation
+questions shows up as a clean win.
+
+| | factual | cross-lingual | error code | routing | dilution | negation | listing | repeat | unanswerable |
+|---|---|---|---|---|---|---|---|---|---|
+| L0 | | | | | | | | | |
+| L1 | | | | | | | | | |
+| … | | | | | | | | | |
+
+Consequences, all binding:
+
+1. A rung is **adopted only if it improves at least one cell and regresses
+   none.** A rung that trades one failure mode for another is rejected, or
+   applied only to the query shapes it helps — which is what routing is for.
+2. Cells where L0 already succeeds grant later rungs **no credit** (§9.1).
+3. Cells that never move across every rung are reported as **open failure
+   modes**, not omitted. They become catalog entries.
+
+This matrix is the single most valuable slide in the presentation. It is also
+the artifact that makes the "never guess" principle real rather than rhetorical.
+
 ## 9. The complexity ladder
 
 The spine of both the build and the talk. **A rung is climbed only when the
 evaluation demonstrates the current rung failing on a specific question
 category.**
 
-| Rung | Added | Climb only if |
-|---|---|---|
-| **L0** | Nothing new — measure the *incumbent* (§9.1) | (baseline) |
-| **L1** | BM25 keyword retrieval | L0 fails on paraphrase |
-| **L2** | Dense embeddings (BGE-M3) | L1 fails on semantic / cross-lingual |
-| **L3** | Hybrid, RRF fusion | L2 fails on error codes and identifiers |
-| **L4** | Cross-encoder reranker | Correct docs retrieved but ranked low **and** latency cost is justified |
-| **L5** | Metadata filters (service, recency, severity) | Answers drawn from wrong service or stale docs |
-| **L6** | Verdict logic + severity gate | Retrieval is good but calls still arrive |
+Ordering is by **cost-effectiveness, cheapest first** — which, after the v1.5
+revision, puts the cross-encoder reranker **last** rather than fourth.
+
+| Rung | Added | Climb only if | Cost |
+|---|---|---|---|
+| **L0** | Nothing new — measure the *incumbent* (§9.1) | (baseline) | none |
+| **L1** | BM25 + Vietnamese word segmentation | L0 fails on paraphrase | trivial |
+| **L2** | Dense embeddings (BGE-M3) | L1 fails on semantic / cross-lingual | index build |
+| **L3** | Hybrid, RRF fusion | L2 fails on error codes and identifiers | negligible at query time |
+| **L4** | **Structure-first**: question parsing + classify-before-retrieve + metadata pre-filter | Wrong-service, stale, negation or listing questions fail | deterministic, ~free |
+| **L5** | **Domain vocabulary map** (acronyms, VI↔EN term pairs) | Internal jargon still misses | human curation, no runtime cost |
+| **L6** | **Embedding upgrade** — evaluate a stronger or different embedder | Semantic recall still short | reindex; no added latency |
+| **L7** | Cross-encoder reranker — **expected to fail** (§9.2) | Signal dilution persists after L0–L6 | +100s of ms **per query** |
+| **L8** | Verdict logic + severity gate | Retrieval is good but calls still arrive | logic only |
+
+Three rungs — L4, L5, L6 — sit between hybrid search and reranking, and all
+three are cheaper at query time than a reranker. That ordering is the central
+lesson of the revision: **the reranker is the most expensive intervention and
+the least likely to pay off, so it is tried last, not by default.**
+
+Not every rung appears in the 45-minute demo (§12). L1–L5 and L7–L8 are
+demonstrated live; L6 (embedding upgrade) is presented as a measured result,
+since swapping an embedder means a reindex that cannot be done on stage.
 
 ### 9.1 What L0 concretely is
 
@@ -256,7 +335,7 @@ L0 must be defined precisely or it degrades into a strawman that flatters every
 later rung. It is **title-and-keyword substring search over the corpus, with no
 ranking** — the behaviour of a typical wiki search box, standing in for the
 knowledge base NOC already has. It is implemented and scored like any other
-rung, against the same 40 questions.
+rung, against the same ~46 questions.
 
 Two honest reporting rules apply:
 
@@ -269,13 +348,37 @@ later gain attributable, and it is the discipline the audience is least likely
 to practise. It is also the only rung that can prove the project unnecessary —
 which is precisely why it must be run first and reported honestly.
 
-Rungs may prove unnecessary. RAGFlow removed its bundled rerankers in 2025 on
-the grounds that they cost latency for minimal recall gain; whether that holds
-on this corpus is an experiment, not an assumption. **Reporting "we tested the
-reranker and it was not worth it" demonstrates more rigor than shipping every
-component.**
+### 9.2 The reranker hypothesis — stated in advance
 
-## 10. Failure catalog (v1)
+Rungs may prove unnecessary, and one is expected to. Two independent sources
+point the same way: RAGFlow removed its bundled rerankers in 2025 on the grounds
+that they cost latency for minimal recall gain, and the *Document Intelligence*
+benchmark (§16) found that **on four of five query shapes where a reranker was
+expected to win, cross-encoders matched or did worse than the embedding alone** —
+with two of three rerankers *actively degrading* results by preferring token
+overlap over meaning. In one case a 22M-parameter model beat every reranker
+tested, inverting the assumed cost/performance gradient.
+
+**Pre-registered hypotheses**, recorded here before the experiment runs so the
+result cannot be rationalized afterwards:
+
+| # | Hypothesis | Falsified if |
+|---|---|---|
+| H1 | L7 improves only the **signal-dilution** category | It improves others materially |
+| H2 | L7 regresses at least one category | No category regresses |
+| H3 | L6 (embedding upgrade) beats L7 at lower query-time cost | L7 wins on more cells than L6 |
+| H4 | L4 (structure-first) delivers a larger gain than L6 and L7 combined | Either exceeds it |
+
+Writing the hypotheses down first is the point. The most likely honest outcome
+of this project is **"we tested the reranker, and the architecture mattered
+more"** — which is a stronger demonstration of engineering judgment than
+shipping every component in the diagram.
+
+One caveat to carry into the talk: these findings come from other people's
+corpora. They are a *prior*, not a conclusion. The measurement on this corpus
+decides, and if the reranker wins here, that gets reported too.
+
+## 10. Failure catalog (v1.5)
 
 First-class deliverable. Each entry carries **symptom → cause → fix → search
 term**, so a colleague who is stuck can self-diagnose and know what to look up.
@@ -290,6 +393,10 @@ Below is v1, grouped by pipeline stage.
 | F0.3 | Cannot say whether the system is good | No success definition | "RAG evaluation", gold set |
 | F0.4 | Demo works, production does not | Evaluated on invented questions | Mine real NOC tickets for the eval set |
 | F0.5 | Long context ignored as an option | Assumed RAG is always needed | "long context vs RAG" |
+| F0.6 | Every component in the reference diagram gets built | The funnel diagram mistaken for a requirement | Cost-ordered ladder; measure each rung |
+| F0.7 | Headline score improves, users complain more | Aggregate metric hid a per-category regression | Per-failure-mode matrix (§8.4) |
+| F0.8 | Effort spent on ranking while structure is ignored | Semantics assumed harder than filtering | "classify before retrieve", structure-first |
+| F0.9 | Expert knowledge left in people's heads | System designed to replace experts, not amplify them | Vocabulary maps, curated routing rules |
 
 ### 10.2 Ingestion and parsing
 
@@ -310,6 +417,7 @@ Below is v1, grouped by pipeline stage.
 | F2.3 | "Restart the service" — which service? | Chunk too small, context lost | Context enrichment / parent-document retrieval |
 | F2.4 | Chunk says "set it to 30" with no antecedent | Heading hierarchy dropped | Prepend heading path to chunk |
 | F2.5 | Table split across chunks | Chunker unaware of table boundaries | Table-aware chunking |
+| F2.6 | Answer sentence present in the chunk but ranked below topical distractors | **Signal dilution** in a long chunk | Smaller chunks, or the one justified reranker case (§9.2) |
 
 ### 10.4 Embedding
 
@@ -321,6 +429,9 @@ Below is v1, grouped by pipeline stage.
 | F3.4 | Short query vs long doc mismatch | Asymmetric embedding not handled | Query/passage prefixes |
 | F3.5 | Retrieval degrades after a model change | Index not rebuilt | Reindex on embedding change |
 | F3.6 | Scores look wrong | Wrong distance metric / no normalization | Cosine vs dot product |
+| F3.7 | Larger, costlier model performs worse | "Bigger is better" assumed; benchmark rank mistaken for fitness on your data | Evaluate small models too — a 22M model has beaten rerankers |
+| F3.8 | Internal jargon never retrieves, whatever the model | Domain vocabulary not curated | Expert keyword/acronym map (§5.4) |
+| F3.9 | Paraphrase found, literal token missed | Embedding smoothed away the exact term | Hybrid; the literal-token trap |
 
 ### 10.5 Retrieval
 
@@ -333,6 +444,10 @@ Below is v1, grouped by pipeline stage.
 | F4.5 | Something is always returned, even garbage | No similarity threshold | Score threshold / abstention |
 | F4.6 | Fused ranking worse than either input | Incomparable score scales | Reciprocal Rank Fusion (RRF) |
 | F4.7 | Answer from the wrong service | No metadata scoping | Metadata filters |
+| F4.8 | "Which services do **not** …" answered with the ones that do | Negation is invisible to similarity | Question parsing; no scorer fixes this |
+| F4.9 | "How many incidents last quarter" answered with one anecdote | Listing/counting sent through retrieval | Structured query, SQL agent |
+| F4.10 | Correct doc buried among 200k plausible ones | Semantic search run over the whole corpus | Classify-before-retrieve, then search the slice |
+| F4.11 | Every rung fails this one question shape | Persistent blind spot, not a tuning problem | Report as an open failure mode (§8.4) |
 
 ### 10.6 Reranking
 
@@ -341,6 +456,10 @@ Below is v1, grouped by pipeline stage.
 | F5.1 | Latency doubled, quality flat | Reranker added by default, unmeasured | Measure before adopting |
 | F5.2 | Reranker hurts Vietnamese results | English-only cross-encoder | Multilingual reranker (BGE-reranker-v2-m3, ViRanker) |
 | F5.3 | Reranking changes nothing | Too few candidates reranked | Widen the candidate pool first |
+| F5.4 | Reranker makes results **worse** | Cross-encoder preferred token overlap over meaning | Compare against no-reranker baseline every time |
+| F5.5 | Reranker budget would have bought a better embedder | Query-time cost chosen over one-off index cost | Try the embedding upgrade first (L6 before L7) |
+| F5.6 | Reranker cannot be cached | Scores depend on the query, so nothing precomputes | Accept the per-query cost, or shrink the candidate pool |
+| F5.7 | Reranker adopted on someone else's benchmark | Findings transferred without local measurement | Re-measure on your own corpus (§9.2 caveat) |
 
 ### 10.7 Generation
 
@@ -374,10 +493,14 @@ Below is v1, grouped by pipeline stage.
 
 F8.5 closes the loop on the opening story and is the final slide.
 
-### 10.10 Planned expansion (v2)
+### 10.10 Expansion status
 
-A dedicated research pass expands the catalog with modern RAG failure modes and
-the evolution of the field. Scope of that research:
+**Done (v1 → v1.5, 2026-07-30).** The *Document Intelligence* series (§16)
+added 16 entries — F0.6–F0.9, F2.6, F3.7–F3.9, F4.8–F4.11, F5.4–F5.7 — and
+changed the ladder, the reporting rule, and the position of reranking. Catalog
+now stands at **62 entries** (46 in v1).
+
+**Remaining research for v2:**
 
 - Agentic RAG and the 2025–2026 shift away from vector search for code
 - Long-context models as a partial RAG substitute; the "lost in the middle" effect
@@ -391,6 +514,11 @@ the evolution of the field. Scope of that research:
 **Inclusion criterion:** an entry is added only if it has an observable symptom,
 a nameable cause, and a search term that leads a stuck colleague somewhere
 useful. Interesting-but-undiagnosable phenomena are excluded.
+
+**Process note.** The v1.5 pass changed the architecture, not merely the
+documentation — reranking moved from rung 4 to rung 7, and three cheaper rungs
+were discovered. That is evidence the research pass belongs **before** the build
+milestones, not after (§15).
 
 ## 11. Platform decision matrix
 
@@ -406,6 +534,13 @@ The primary take-home artifact for colleagues.
 
 Tiers 0 and 4 earn the audience's trust by stating when *not* to use the
 technology being presented.
+
+**A rule that cuts across every tier:** at any tier, spend on structure before
+spending on ranking. Classification, metadata filtering, question routing and a
+curated vocabulary are cheap, deterministic, and inspectable. Rerankers are
+expensive per query, unpredictable, and — on the evidence in §9.2 — frequently
+neutral. A colleague who remembers only this one rule will still make better
+decisions than the reference architecture diagrams they will be shown.
 
 ## 12. Presentation run-of-show (~2 hours)
 
@@ -425,10 +560,21 @@ tour. Each fix is a concept the audience can subsequently search for:
 1. Baseline (L0/L1) fails a paraphrased question → *semantic search*
 2. Vietnamese question misses the English runbook → *multilingual embeddings*
 3. Error-code query returns nonsense → *hybrid search*
-4. Correct document ranks 7th → *reranking*, **with the latency measured**
-5. Answer drawn from the stale runbook → *metadata filtering*
-6. Confidently wrong on an unknown → *grounding and refusal*
-7. Repeat incident → **SELF_SERVE verdict; the call is rejected**
+4. Answer drawn from the stale runbook, wrong service → *classify-before-retrieve*
+5. "Which services do **not** …" fails at every rung → *question parsing; the
+   limit of similarity search*
+6. Internal acronym never matches → *domain vocabulary map*
+7. **The reranker experiment** → add it, measure it, and show the latency chart
+   against the per-category matrix. Expected outcome: it helps one category and
+   costs 100s of ms. **The audience watches a component get rejected on evidence.**
+8. Confidently wrong on an unknown → *grounding and refusal*
+9. Repeat incident → **SELF_SERVE verdict; the call is rejected**
+
+Beat 7 is the pivot of the talk. Every RAG tutorial adds a reranker and declares
+victory; this one adds it, measures it, and takes it out. That single moment
+teaches the evaluation principle more effectively than any slide about
+evaluation, and it inoculates the audience against the next vendor diagram they
+are shown.
 
 Payoff: the same service consumed by Open WebUI (OpenAI-compatible endpoint),
 by an agent (MCP), and rebuilt no-code in Flowise.
@@ -478,13 +624,33 @@ Each milestone gets its own implementation plan.
 
 | # | Milestone | Output |
 |---|---|---|
-| **M1** | Corpus + gold question set + eval harness | Measurable baseline exists |
-| **M1.5** | Failure catalog research pass (§10.10) | Catalog v2 |
-| **M2** | Retrieval service, ladder rungs L1–L3 | Hybrid retrieval, measured |
-| **M3** | Rungs L4–L5, reranking and metadata | Measured; either adopted or rejected with evidence |
-| **M4** | Verdict logic, severity gate, citations | Deflection measured |
-| **M5** | Interfaces — OpenAI-compatible, MCP, Open WebUI, Flowise | Demo-able end to end |
-| **M6** | Talk materials, decision matrix, glossary, rehearsal | Presentable |
+| **M0** | Catalog research pass v2 (§10.10) — **moved to first** | Catalog v2; ladder confirmed before anything is built |
+| **M1** | Corpus + gold question set + eval harness + L0 baseline | Measurable baseline exists |
+| **M2** | Retrieval service, rungs L1–L3 | Hybrid retrieval, per-category matrix |
+| **M3** | Rungs L4–L5 — structure-first routing + vocabulary map | The cheap architectural wins, measured |
+| **M4** | Rungs L6–L7 — embedding upgrade, then the reranker experiment | Hypotheses H1–H4 (§9.2) resolved on evidence |
+| **M5** | Rung L8 — verdict logic, severity gate, citations | Deflection and false-deflection measured |
+| **M6** | Interfaces — OpenAI-compatible, MCP, Open WebUI, Flowise | Demo-able end to end |
+| **M7** | Talk materials, decision matrix, glossary, rehearsal | Presentable |
+
+**M0 moved to the front.** The v1.5 revision changed the architecture, not just
+the prose — a second research pass could do the same, and discovering that after
+M2 is built means rework. Research is cheap; rebuilding is not.
 
 Track A (learning notebooks) runs alongside M2–M4 rather than as a separate
 milestone: each rung is understood from scratch before it is configured.
+
+## 16. References
+
+- **Document Intelligence: A Series on Building RAG Brick by Brick, from Minimal
+  to Corpus Scale** — 22 articles in five parts; source of the architectural
+  principles in §5.4.
+  https://towardsdatascience.com/document-intelligence-a-series-on-building-rag-brick-by-brick-from-minimal-to-corpus-scale/
+- **Rerankers Aren't Magic Either: When the Cross-Encoder Layer Is Worth the
+  Cost** — the 7-model benchmark (4 embeddings, 3 cross-encoders) behind §9.2.
+  https://towardsdatascience.com/rerankers-arent-magic-either-when-the-cross-encoder-layer-is-worth-the-cost-enterprise-document-intelligence-vol-1-2bis/
+- RAGFlow release notes — removal of bundled rerankers, 2025.
+- Anthropic's replacement of the Claude Code vector index with agentic search,
+  May 2025; Amazon Science (AAAI 2026) measuring agentic keyword search at 94.5%
+  of RAG faithfulness with no vector store. Both support §10.1 entry F0.2.
+- BAAI BGE-M3 — multilingual embeddings, 100+ languages, 8192-token inputs.
