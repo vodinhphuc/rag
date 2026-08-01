@@ -1,4 +1,4 @@
-# RAG for NOC Call Deflection — Design
+# RAG for NOC Deflection and Escalation Support — Design
 
 **Date:** 2026-07-29
 **Revised:**
@@ -9,8 +9,15 @@
   retrieval (§9.1), the one-off vs recurring cost axis (§9), measurable parsing
   quality via NED/TEDS against authored source (§6.1), and 14 parsing failure
   modes. This closed a gap where `F1.1`/`F1.2` were catalogued but unmeasurable.
+- **v1.7** (2026-07-30) — **stakeholder interview**. Deflectable questions are a
+  *small* share of volume; the bulk is hard production-bug analysis needing
+  detailed module design knowledge. Split the product into two value
+  propositions (§1.1): deflect the easy slice, **accelerate** the hard one via a
+  context packet (§7.4). Added agentic search over code as an in-scope
+  *demonstration* while code indexing stays a non-goal (§5.5), and a question-
+  shape decision guide plus retrieval-vs-memory distinction (§11.1, §11.2).
 
-**Status:** Approved (design); failure catalog at v1.6 (see §10.10)
+**Status:** Approved (design); failure catalog at v1.7 (see §10.10)
 **Author:** phucvd
 
 ---
@@ -22,13 +29,44 @@ knowledge was missing, but because it was **unfindable**. NOC cannot locate or
 confirm the relevant procedure, so they escalate to the production/development
 team on almost every alert.
 
-The most expensive category of escalation is the **repeat incident**: the same
-failure has occurred several times, a playbook already exists, and NOC cannot
-recall or find it. The development team wants those calls rejected.
+One category of escalation is the **repeat incident**: the same failure has
+occurred several times, a playbook already exists, and NOC cannot recall or find
+it. The development team wants those calls rejected.
 
 The root cause is findability, which is precisely and only what retrieval
 fixes. Writing more documentation would not have helped. This is the honest
 motivation for the project and the opening of the presentation.
+
+### 1.1 What the stakeholder interview corrected
+
+A v1.7 interview with the development team revised the volume assumption this
+spec was originally built on. Deflectable questions — those with an existing
+guide — are **a small share** of the traffic. The bulk is **hard questions**:
+reports of production bugs whose diagnosis needs deep knowledge of module
+design, logic diagrams and internal behaviour.
+
+Optimizing for deflection rate therefore optimizes for the minority. There are
+**two products with different metrics**, and v1.6 named only one:
+
+| Slice | Volume | Correct response | Metric |
+|---|---|---|---|
+| **Easy** — a guide already exists | Small | **Deflect.** Remind, don't answer | Deflection rate (§8.2) |
+| **Hard** — production bug, novel | **Large** | **Do not deflect. Accelerate.** | **Time-to-context** (§7.4) |
+
+For the hard slice the dev team still gets paged, and should. §7.3 already
+identifies false deflection as the dangerous error, and a novel production bug is
+exactly where wrongly deflecting prolongs an outage. The win is not avoiding the
+call — it is that the engineer arrives holding the module design document, the
+logic diagram, the three most similar past incidents, the recent deploys touching
+that service, and the module owner. Twenty minutes of digging becomes seconds.
+
+This capability existed in v1.6 as a single clause — `ESCALATE` "with retrieved
+context attached." It was a footnote serving the majority of the volume. v1.7
+promotes it to a first-class deliverable with its own metric (§7.4).
+
+**The honest framing for the talk:** RAG does not answer the hard questions. It
+removes the search time in front of them. Claiming more than that is how the
+tool loses credibility on its first wrong root-cause call.
 
 ## 2. Goals
 
@@ -52,8 +90,13 @@ motivation for the project and the opening of the presentation.
 - Production deployment, HA, or SLA design.
 - Connectors to real Confluence/Jira/ServiceNow instances.
 - Conversation memory, multi-turn agent planning, web chat UI development.
-- Indexing source code. (Dropped deliberately; see §10.1 catalog entry F0.2 —
-  code is the case where agentic search usually beats RAG.)
+- **Indexing source code into the vector store.** Dropped deliberately; see
+  §10.1 entry F0.2 — code is the case where agentic search beats RAG. Note the
+  distinction added in v1.7: *agentic search over code* IS in scope as a
+  demonstration (§5.5); building a vector index over code is not.
+- Telemetry integration — logs, metrics, deploy history. Real root-cause work
+  needs it (§5.5), and its absence is stated openly rather than glossed over.
+- An autonomous root-cause agent that concludes rather than recommends.
 - Using real company documents. The corpus is authored (§6).
 - **Visual retrieval** — page-as-image (ColPali, ColQwen2) or unified multimodal
   embeddings (Cohere Embed 4, voyage-multimodal-3). Both need GPU and
@@ -192,6 +235,35 @@ The last point reframes the project honestly: this is not an AI that learns
 operations. It is a findability layer over knowledge the team already has —
 which is exactly the failure identified in §1.
 
+### 5.5 Code: agentic search, not a vector index
+
+The hard slice (§1.1) requires reasoning over module design *and* code. These
+demand opposite retrieval strategies, and conflating them is the most common
+mistake this project can help colleagues avoid.
+
+| Material | Strategy | Why |
+|---|---|---|
+| Design docs, logic diagrams, runbooks, past incidents | **RAG** | Semantic phrasing, no symbol names, VI question against EN document, answers inside diagrams |
+| Source code, config, error strings | **Agentic search** — grep, read, follow references, iterate | Filenames and symbols already form an index; chunking severs a function's meaning across signature, body, imports, and a caller three files away |
+
+Anthropic removed the vector index from Claude Code in May 2025 after finding
+agentic search retrieved code better; Windsurf, Cline, Devin and Sourcegraph Amp
+followed. An Amazon Science paper (AAAI 2026) measured agentic keyword search at
+94.5% of RAG faithfulness with no vector store at all.
+
+**In scope for the demo:** a short live segment running agentic search over a
+small code repository beside RAG over the document corpus, on the same question.
+It costs no additional infrastructure — grep and a file reader — and converts
+§12's "do you even need RAG?" segment from a cited claim into something the
+audience watches happen.
+
+**Out of scope, stated plainly:** real root-cause analysis also needs telemetry —
+logs, metrics, deploy history, service topology. The 2026 pattern is *progressive
+discovery*: alert → metric anomaly → deployment history → the specific diff, each
+step chosen from what the previous one revealed. Systems built this way
+**recommend ranked hypotheses with evidence; they do not conclude.** This project
+demonstrates the retrieval half and names the rest as the graduation path.
+
 ## 6. Corpus design
 
 An authored corpus for a fictional order/payment processing service.
@@ -313,12 +385,47 @@ Target: maximize deflection rate subject to **false deflection rate ≈ 0** on
 the gold set. Stating this precision/recall trade-off explicitly, and measuring
 it, is the most credibility-earning part of the presentation.
 
+### 7.4 The context packet — the hard slice
+
+`ESCALATE` is not a failure state. It is the response for the **majority** of
+volume (§1.1), and its output is a structured packet assembled while the page is
+being sent:
+
+| Field | Source | Why the engineer needs it |
+|---|---|---|
+| Symptom summary + severity + service | Question parsing (L4) | Orientation in one line |
+| **Module design doc / logic diagram** | RAG over docs, figure captions (P4) | The knowledge the interview identified as decisive |
+| **Top-3 similar past incidents** with resolutions | RAG over tickets | "This resembles #4471, resolved by a config rollback" |
+| Relevant runbook sections | RAG over runbooks | Even when insufficient to deflect |
+| Module owner / on-call for that service | Metadata | Removes a routing hop |
+| Recent changes touching the service | Metadata (deploy dates in tickets) | The most common cause of new bugs |
+| **What was searched and not found** | Retrieval trace | Stops the engineer repeating the search |
+
+The last row matters more than it looks. A packet that says "no runbook covers
+this symptom, and no past incident matches" has already saved the engineer their
+first ten minutes — a *negative* result delivered with confidence is genuine
+information.
+
+**Metric: time-to-context** — the interval from alert to an engineer holding the
+relevant design document and prior incidents. Measured against a human baseline:
+the same task done by hand on the same gold questions.
+
+Two properties make this attractive relative to deflection:
+
+1. **It is safe.** No false-deflection risk (§7.3). The worst case is an
+   irrelevant packet, and the engineer proceeds exactly as they would have.
+2. **It is nearly free.** Retrieval, metadata and citations already exist for the
+   deflection path; the packet is assembly and formatting, not new capability.
+
+The hard slice is where the volume is, and it is served by the *cheapest* and
+*lowest-risk* thing in the system. That inversion is worth a slide of its own.
+
 ## 8. Evaluation design
 
 Measurement precedes and justifies every architectural addition. Nothing enters
 the pipeline on intuition.
 
-### 8.1 Gold question set — ~56 questions
+### 8.1 Gold question set — ~62 questions
 
 Categories are **failure modes, not topics.** Each exists to make one specific
 weakness visible, and each is scored separately (§8.4).
@@ -336,6 +443,7 @@ weakness visible, and each is scored separately (§8.4).
 | **Negation** | 3 | Persistent blind spot — needs question parsing, not ranking |
 | **Listing / counting** | 3 | Retrieval is the wrong tool; needs a structured query |
 | Repeat incident with playbook | 5 | SELF_SERVE deflection |
+| **Hard / novel production bug** | 6 | **Context packet quality (§7.4)** — the majority slice |
 | Unanswerable | 3 | INSUFFICIENT — refusal to guess |
 
 The three parsing categories are answerable **only** from a table, a scanned
@@ -361,8 +469,10 @@ containing only questions the system can answer would prove nothing.
 | `recall@5`, `MRR` | Retrieval quality, independent of the LLM |
 | Groundedness (LLM judge) | Answer supported by retrieved text |
 | Correctness (LLM judge) | Answer matches the gold answer |
-| **Deflection rate** | The business metric |
+| **Deflection rate** | The business metric for the easy slice |
 | **False deflection rate** | The dangerous error (§7.3) |
+| **Time-to-context** vs a human baseline | The business metric for the **majority** slice (§7.4) |
+| **Packet precision** — share of packet items an engineer rates relevant | A packet of noise is worse than none; it trains people to ignore it |
 | Refusal accuracy on unanswerable | Does it decline to guess |
 | Latency p50 / p95 | Reranking and fusion cost real time |
 | Cost per query | Adoption reality for colleagues |
@@ -475,7 +585,7 @@ revision, puts the cross-encoder reranker **last** rather than fourth.
 | **L5** | **Domain vocabulary map** (acronyms, VI↔EN term pairs) | Internal jargon still misses | human curation, no runtime cost |
 | **L6** | **Embedding upgrade** — evaluate a stronger or different embedder | Semantic recall still short | reindex; no added latency |
 | **L7** | Cross-encoder reranker — **expected to fail** (§9.4) | Signal dilution persists after L0–L6 | +100s of ms **per query** |
-| **L8** | Verdict logic + severity gate | Retrieval is good but calls still arrive | logic only |
+| **L8** | Verdict logic + severity gate + **context packet** (§7.4) | Retrieval is good but calls still arrive | logic only |
 
 Three rungs — L4, L5, L6 — sit between hybrid search and reranking, and all
 three are cheaper at query time than a reranker. That ordering is the central
@@ -493,7 +603,7 @@ L0 must be defined precisely or it degrades into a strawman that flatters every
 later rung. It is **title-and-keyword substring search over the corpus, with no
 ranking** — the behaviour of a typical wiki search box, standing in for the
 knowledge base NOC already has. It is implemented and scored like any other
-rung, against the same ~56 questions.
+rung, against the same ~62 questions.
 
 Two honest reporting rules apply:
 
@@ -655,6 +765,14 @@ rather than loud. Nothing downstream can repair a fact lost here.
 | F7.3 | A P1 was deflected | No severity awareness | Severity gate (§7.2) |
 | F7.4 | Verdict ignored | No citations / no trust | See F6.2 |
 | F7.5 | Same wrong deflection recurs | No feedback loop | Log verdicts + outcomes |
+| F7.6 | **System optimized for the minority of volume** | Deflection rate chosen before question volumes were measured | Interview the stakeholders; count question shapes first (§1.1) |
+| F7.7 | Escalation treated as system failure | `ESCALATE` framed as a miss rather than a product | Context packet with its own metric (§7.4) |
+| F7.8 | Engineer ignores the packet | Packet padded with loosely-related material | Measure packet precision, not packet size |
+| F7.9 | Agent asserts a root cause and is wrong | Recommendation presented as conclusion | Ranked hypotheses with evidence; the engineer decides |
+| F7.10 | Root-cause agent reasons without telemetry | Only documents wired up; no logs, metrics or deploy history | Name the gap; progressive discovery needs signals (§5.5) |
+| F7.11 | Code searched via vector similarity, results incoherent | Code chunked into an embedding index | Agentic search — grep, read, follow (§5.5) |
+| F7.12 | Agent "remembers" a decision that was never recorded | Retrieval asked to recover what was never written | Memory ≠ retrieval (§11.2) |
+| F7.13 | Agent memory confidently wrong forever | Memory poisoned; no expiry, no provenance | Temporal/versioned memory; treat writes as carefully as deletes |
 
 ### 10.9 Operations and adoption
 
@@ -679,6 +797,11 @@ v1).
 entries, F1.6–F1.19. Parsing went from 5 entries to 19, making it the largest
 stage in the catalog — proportionate, since it is the only stage whose failures
 are silent. **76 entries.**
+
+**v1.6 → v1.7 (2026-07-30).** Stakeholder interview added 8 entries, F7.6–F7.13,
+covering the volume-misallocation failure, escalation-as-product, root-cause
+overreach, and agent-memory hazards. **84 entries.** F7.6 is the one the author
+would have shipped without the interview.
 
 **Remaining research for v2:**
 
@@ -716,8 +839,62 @@ The primary take-home artifact for colleagues.
 | **4** | Agent over a codebase | **No vector store.** Agentic search + MCP | Hours | No semantic / cross-lingual matching |
 | **5** | Answers live in charts, dense layouts, slide decks | Visual retrieval — ColPali / ColQwen2, or multimodal embeddings (Cohere Embed 4, voyage-multimodal-3) | Weeks, **needs GPU** | Cost; caption-and-index gets most of the value first |
 
-**Parser selection within tier 2**, since this is the choice colleagues will
-actually face: **Docling** for mixed Office formats and tables with element-level
+### 11.1 Which strategy for which question shape
+
+Added in v1.7 in direct response to the interview questions. This is the table
+colleagues will use most.
+
+| Question shape | Strategy | Not this |
+|---|---|---|
+| "How do I restart the payment worker?" — a guide exists | **RAG + deflect** (§7) | Don't involve an agent; it's a lookup |
+| "Why is this service throwing `ORD-5021` since 03:00?" — novel bug | **RAG for design docs + incidents → context packet** (§7.4), engineer decides | Don't let it conclude a root cause |
+| "Where is the retry timeout implemented?" — code location | **Agentic search** (grep, read, follow) | Don't index code into a vector store |
+| "Which services depend on the retry queue?" | **Structured query** over a service map | Don't ask similarity search; it cannot do negation or enumeration |
+| "How many P2 incidents touched payments last quarter?" | **Structured query / SQL** | Not retrieval at all |
+| "What did we decide about this module last sprint?" | **Agent memory** (§11.2) | Not RAG over documents that were never written |
+
+The pattern: **retrieval finds what was written down; it cannot recover what was
+never recorded.** Most disappointment with RAG traces to asking it for the
+second.
+
+### 11.2 Retrieval vs memory — for the coding-agent question
+
+The third interview question was whether RAG can act as a memory layer for a
+coding agent. It can, and a real discipline exists — but the distinction that
+matters is:
+
+- **Retrieval** finds knowledge that already exists in documents.
+- **Memory** persists what an agent *learned* — decisions, corrections,
+  conventions, task history.
+
+They are constantly conflated, and the conflation causes the disappointment.
+
+Standard memory scopes in 2026: **working** (session), **episodic** (past
+interactions), **semantic** (facts), **procedural** (learned behaviour). The
+established options are Mem0 (~48k stars, vector-first, adoption leader),
+Zep/Graphiti (temporal knowledge graph — tracks how facts *change*, which is what
+you want for "that API was deprecated last month"), Letta/MemGPT
+(core/recall/archival tiers), LangMem, Cognee (vector + graph traversal to follow
+call chains), OpenMemory (MCP server; works with Claude Desktop, Cursor, VS Code).
+
+**Recommendation for a coding agent: start with `AGENTS.md` / `CLAUDE.md` plus
+agentic search.** Structured project files plus grep cover most of the value with
+none of the infrastructure. Note that Cognee's own argument for graph traversal —
+that pure vector retrieval cannot follow call chains — is itself evidence that
+vector RAG is a poor fit for code memory.
+
+Known weaknesses to state honestly: evaluation is immature (current benchmarks
+do not measure procedural quality, cross-agent consistency, or **poisoning
+resistance**), and a wrong fact written to memory is wrong **permanently and
+silently** — the same class of failure as F1.6, where a document is indexed but
+invisible.
+
+**Adopt a memory framework when you can name the specific thing being
+forgotten.** Not before. Same principle as every other rung in this project.
+
+### 11.3 Parser selection within tier 2
+
+Since this is the choice colleagues will actually face: **Docling** for mixed Office formats and tables with element-level
 provenance; **MinerU** if formulas matter; **Marker** for fast PDF→markdown;
 **Unstructured** if you ingest 25+ formats and want typed elements to drive
 chunking. Try `pdftotext` first — on clean digital PDFs it sometimes suffices,
@@ -739,11 +916,16 @@ decisions than the reference architecture diagrams they will be shown.
 |---|---|
 | 0:00–0:10 | **The real story** — we gave NOC a knowledge base; they still call us |
 | 0:10–0:25 | **Concepts** — one pipeline diagram, no mathematics |
-| 0:25–0:40 | **Do you even need RAG?** grep vs RAG vs long context; the evidence |
-| 0:40–1:25 | **Live demo — climbing the ladder, failure by failure** |
-| 1:25–1:40 | **Decision matrix** (§11) |
-| 1:40–1:50 | **Failure catalog** as the take-home |
+| 0:25–0:40 | **Do you even need RAG? — run live.** Same question through agentic search over code and RAG over docs (§5.5). Each wins on its own material |
+| 0:40–1:20 | **Live demo — climbing the ladder, failure by failure** |
+| 1:20–1:30 | **The hard slice** — context packet and time-to-context (§7.4, §1.1) |
+| 1:30–1:42 | **Decision matrix + question-shape guide** (§11, §11.1) |
+| 1:42–1:50 | **Failure catalog** as the take-home; retrieval vs memory (§11.2) |
 | 1:50–2:00 | Q&A, adoption checklist, VI/EN glossary |
+
+The 0:25–0:40 segment becomes a **live comparison** rather than cited evidence.
+It costs no extra time — it replaces slides that made the same claim — and it
+answers the interview's second question by demonstration instead of assertion.
 
 The demo block is structured as **failure → named fix**, never as a feature
 tour. Each fix is a concept the audience can subsequently search for:
@@ -765,6 +947,9 @@ tour. Each fix is a concept the audience can subsequently search for:
    costs 100s of ms. **The audience watches a component get rejected on evidence.**
 9. Confidently wrong on an unknown → *grounding and refusal*
 10. Repeat incident → **SELF_SERVE verdict; the call is rejected**
+11. Hard production bug → **ESCALATE with a context packet.** The call goes
+    through, and the engineer arrives already holding the design doc, the logic
+    diagram and three similar past incidents → *accelerate, don't deflect*
 
 **Beat 0 is deliberately first.** Before any talk of embeddings, the audience
 watches a document that is present, indexed, and utterly unreachable. That is
@@ -846,7 +1031,8 @@ Each milestone gets its own implementation plan.
 | **M2** | Retrieval service, rungs L0–L3 | Hybrid retrieval, per-category matrix |
 | **M3** | Rungs L4–L5 — structure-first routing + vocabulary map | The cheap architectural wins, measured |
 | **M4** | Rungs L6–L7 — embedding upgrade, then the reranker experiment | Hypotheses H1–H4 (§9.4) resolved on evidence |
-| **M5** | Rung L8 — verdict logic, severity gate, citations | Deflection and false-deflection measured |
+| **M5** | Rung L8 — verdict logic, severity gate, citations, **context packet** | Deflection, false-deflection **and time-to-context** measured |
+| **M5.5** | **Agentic-search demo** over a small code repo, beside RAG | The §5.5 comparison, runnable |
 | **M6** | Interfaces — OpenAI-compatible, MCP, Open WebUI, Flowise | Demo-able end to end |
 | **M7** | Talk materials, decision matrix, glossary, rehearsal | Presentable |
 
@@ -887,4 +1073,14 @@ milestone: each rung is understood from scratch before it is configured.
   voyage-multimodal-3), and page-as-image retrieval (ColPali, ColQwen2). Basis of
   the P4 choice and decision-matrix tier 5.
 - Comparative parser reviews (Docling / Marker / MinerU / Unstructured) behind
-  the tier-2 parser guidance in §11.
+  the tier-2 parser guidance in §11.3.
+- **AI SRE / root-cause agent practice, 2026** — progressive discovery (alert →
+  metric anomaly → deploy history → diff), multi-signal fusion across traces,
+  metrics and logs with topology-aware reasoning. Basis of §5.5's scope boundary
+  and F7.9/F7.10.
+- **Agent memory frameworks, 2026** — Mem0, Zep/Graphiti, Letta/MemGPT, LangMem,
+  Cognee, OpenMemory (MCP); the working/episodic/semantic/procedural scopes; and
+  the immaturity of memory evaluation with respect to procedural quality and
+  poisoning resistance. Basis of §11.2 and F7.12/F7.13.
+- **Stakeholder interview**, development team, 2026-07-30. Source of §1.1 —
+  the volume correction that produced v1.7.
