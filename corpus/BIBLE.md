@@ -158,6 +158,44 @@ console" and diverge only in the diagnostic step.
 
 ---
 
+## 6.1 Language versions (EN / VI / JA)
+
+The real corpus carries the same document in three languages, so the generated
+corpus must too — otherwise block 3 of the seminar has nothing to demonstrate.
+
+**Every document carries three metadata fields**, and they are the point:
+
+| Field | Example | Why |
+|---|---|---|
+| `doc_id` | `D06` | The *same* across all language versions. Retrieval groups on this before top-k |
+| `language` | `en` \| `vi` \| `ja` | Selects the citation the reader can actually read |
+| `version` | `4.2` | Distinguishes current from superseded |
+
+Six documents get all three language versions — enough to demonstrate top-k
+flooding without tripling the authoring effort:
+
+| Doc | EN | VI | JA | Carries |
+|---|---|---|---|---|
+| D01 Agent installation (Windows) | ✓ | ✓ | ✓ | Top-k flooding |
+| D04 Architecture overview | ✓ | ✓ | ✓ | Flooding + figure captioning |
+| D06 Runbook: agent offline | ✓ | ✓ | ✓ | **The block-3 demo document** |
+| D08 Runbook: collector back-pressure | ✓ | ✓ | — | Partial coverage is realistic |
+| D13 SOC alert triage playbook | ✓ | ✓ | ✓ | Cross-lingual, SOC audience |
+| D16 Console access + RBAC | ✓ | — | ✓ | **VI missing entirely** — the answer exists only in a language the reader cannot read |
+
+**D16 is deliberately missing its Vietnamese version.** The operator asks in
+Vietnamese; the only sources are English and Japanese. The system must retrieve
+across languages and **answer in Vietnamese anyway**, citing the English original.
+That is the requirement, and it is invisible unless a document lacks a VI version.
+
+**All versions carry the same `version` number.** The team updates translations
+together as a matter of procedure, so drift is *not* simulated as a headline trap.
+One exception exists for teaching only:
+
+| Drift pair | Purpose |
+|---|---|
+| D08 `en` at v4.2, D08 `vi` at v3.8 | A single, clearly-labelled example so the seminar can say "if your versions ever update separately, this is what it looks like" — one sentence, not a demo beat |
+
 ## 7. Trap-to-document index
 
 Cross-check that every trap in spec §6.3 has a home.
@@ -184,6 +222,10 @@ Cross-check that every trap in spec §6.3 has a home.
 | Two-column reading order | D01 |
 | Repeated footer | D16 |
 | Cross-format duplicate | D02 present as both DOCX and exported PDF |
+| **Top-k flooding by translation** | D01, D04, D06, D13 (three language versions each) |
+| **Answer exists only in a language the reader cannot read** | D16 — EN and JA only, no VI |
+| **Language-blind dedup** | Any of the three-version documents; content hashes differ |
+| Translation drift (teaching example only) | D08 `en` v4.2 vs D08 `vi` v3.8 |
 
 Every trap in the spec has at least one home, and no document carries more than
 two — so a failure attributes to one cause.
@@ -192,6 +234,9 @@ two — so a failure attributes to one cause.
 
 ## 8. Consistency rules for generation
 
+0. Every document is front-matter tagged with `doc_id`, `language` and `version`
+   (§6.1). Translations of one document share a `doc_id` — this is what makes
+   grouping-before-top-k possible, and it cannot be reconstructed after ingest.
 1. Component names, ports and error codes come **only** from this file.
 2. A fact appears in exactly one document unless duplication is the trap.
 3. Vietnamese runbooks keep English technical terms inline — that mix is the

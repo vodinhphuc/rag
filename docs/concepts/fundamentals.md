@@ -1,12 +1,24 @@
-# RAG Fundamentals — seminar segment 0:10–0:25
+# RAG Fundamentals — source material
 
-Teaching material for the concepts block. Companion to the design spec
-(../superpowers/specs/2026-07-29-rag-noc-assistant-design.md).
+Companion to the design spec
+(../superpowers/specs/2026-07-29-rag-noc-assistant-design.md) and the narrative
+design (../talk/logic-flow.md).
 
-**Time warning.** The material below is roughly 25 minutes of content for a
-15-minute slot. §1, §2 and §3 are the core; §5 is the one that earns attention
-from senior engineers. §4 can be compressed to a single slide, and §6 handed out
-rather than presented. Cutting guidance is in §7.
+**This is a source pool, not a running order.** The seminar interleaves teaching
+with demonstration rather than front-loading theory, so this material is
+distributed across the acts:
+
+| Section here | Goes to | Note |
+|---|---|---|
+| §1 Why RAG (the tool options) | **Act II** | Include the CAG rejection (§1.1) |
+| §2 The stages | **Act II** | Keep the *ingest fails silently* point; it sets up demo block 1 |
+| §3 The evolution | **Act V** | Compressed to one arc, delivered *after* they have climbed the ladder |
+| §4 When to retrieve | Cut, or one line in Act V | |
+| §5 Security | **Act IV** | Rewritten as a mechanism (§5) |
+| §6 Glossary | Handed out **at the start** | |
+
+The old cutting guidance in §7 is superseded by the rehearsal card in
+`../talk/logic-flow.md` §7.
 
 ---
 
@@ -18,6 +30,7 @@ way is how audiences end up adopting it for problems it does not solve.
 | Approach | What it changes | Best for | Real cost |
 |---|---|---|---|
 | **Prompt / long context** | Nothing | Small, stable corpora; prototyping | ~20–24× more expensive than RAG at production volume |
+| **CAG** (cache-augmented) | Nothing | Stable corpus that fits the window, **on a model instance you own** | Cache rebuild on every document change |
 | **Fine-tuning** | Behaviour | Tone, format, response style, reasoning patterns | Training, plus retraining whenever content changes |
 | **RAG** | Knowledge | Facts that change; attribution; per-user access control | Index maintenance |
 | **Agentic search** | Nothing | Code, structured filesystems | Latency and tokens on every query |
@@ -26,6 +39,31 @@ The 2026 consensus is that these **layer** rather than compete:
 
 > **Fine-tuning teaches the model how to respond. RAG supplies what to reason
 > about. Long context is for prototyping.**
+
+### 1.1 CAG, and why it was rejected here
+
+**Cache-Augmented Generation** preloads the entire corpus into context, precomputes
+the KV cache, and serves with no retrieval at runtime. It is the *optimised* form
+of long context — it attacks long context's weakness, cost per query, directly.
+
+It is a real candidate and it was genuinely considered. Two things killed it:
+
+1. **The model host is shared across teams.** CAG's benefit depends on the cached
+   corpus prefix staying **resident** in GPU memory. With multiple tenants, each
+   would need its own large prefix competing for the same finite memory — caches
+   get evicted and recomputed, erasing the advantage that justified CAG.
+2. **The corpus will grow beyond one product's documentation.** RAG scales by
+   adding to an index; CAG requires rebuilding the cache and re-fitting the window.
+
+Published RAG-vs-CAG comparisons argue about **context window size**. That is the
+less useful criterion. The one that decided it:
+
+> **Do you own the model instance, or share it?** Shared hosting rules out any
+> technique that depends on resident per-corpus cache state.
+
+Present this as a rejection *with a stated reason*. It is a worked example of the
+method the whole seminar teaches: consider the option, name the constraint that
+kills it, move on.
 
 ### When RAG is the right answer
 
@@ -45,6 +83,7 @@ The 2026 consensus is that these **layer** rather than compete:
 | Situation | Use instead |
 |---|---|
 | ~20 documents, one team | Long context. Skip the infrastructure entirely |
+| Stable corpus, fits the window, **you own the model instance** | CAG (§1.1) |
 | Output has the wrong *tone or format* | Fine-tuning. Retrieval cannot fix behaviour |
 | Searching code | Agentic search — grep, read, follow references |
 | "How many incidents last quarter?" | A structured query. Counting is not retrieval |
@@ -165,6 +204,34 @@ vector store.
 Most teams adopt Gen 4 machinery to solve a Gen 1 problem. The only way to know
 which generation you need is to measure where yours actually breaks — which is
 the complexity ladder (spec §9) and the reason it exists.
+
+### The layer map — where the 2026 buzzwords fit
+
+Colleagues will have heard these. They are **layers around RAG, not competitors**,
+which is precisely why "is RAG dead" keeps being asked and keeps being wrong.
+
+| Layer | Unit of control | Where retrieval sits |
+|---|---|---|
+| Prompt engineering | One model response | RAG fills the prompt |
+| Context engineering (2025) | What is in the window | RAG is the mechanism; **CAG** is the no-retrieval alternative (§1.1) |
+| Loop engineering (late 2025→) | One agent's cycle: discover → plan → execute → verify | **Agentic RAG** — the agent chooses how to retrieve |
+| Graph engineering (2026→) | Many agents; stateful, **cyclic** control flow | GraphRAG is retrieval over a knowledge graph — *a different sense of "graph"* |
+| Harness engineering | Everything wrapping the model | Retrieval is one harness component |
+
+Two precise points worth making, because both are commonly got wrong:
+
+- Agent graphs are **cyclic, not DAGs.** Loops live inside the graph — exactly what
+  a classic DAG orchestrator forbids. Closer to a state machine than a pipeline.
+- **"Graph" means two unrelated things**: a graph of *agents* (orchestration) and a
+  graph of *knowledge* (GraphRAG).
+
+"**Agent = Model + Harness**" (Hashimoto, 2026). The wrapper around a *fixed* model
+reportedly moves end-to-end benchmark performance by up to **6×** — which is
+independent support for this project's thesis that architecture beats
+model-swapping.
+
+Cap this at one slide. The payoff is a single sentence: *these are layers you can
+add later; you still have to make retrieval work first.*
 
 ### On "is RAG dead?"
 

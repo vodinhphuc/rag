@@ -54,25 +54,62 @@
   Qwen3-Embedding-4B vs BGE-M3 head-to-head; H5 added for instruction-aware
   relevance.
 
-**Status:** Approved (design); failure catalog at v2.2 (see §10.11)
+- **v2.3** (2026-08-02) — **seminar review corrections.** Removes an **invented
+  premise** ("writing more documentation would not have helped") that no
+  stakeholder ever stated; §1 restated as **three tiers**, including the honest
+  admission that the system adds nothing to cases NOC already handles. §7 replaces
+  the three-verdict model with **answer (playbook + step) / escalate-with-
+  evidence**; "false deflection" → **false answer**. §6.6 adds EN/VI/JA document
+  versions — top-k flooding, `doc_id` grouping, and **answers pinned to
+  Vietnamese**; translation drift demoted, since versions update together. §11.0
+  records **CAG as considered and rejected**, contributing the criterion *do you
+  own the model instance or share it?* §12 replaces the theory-then-demo split
+  with eight interleaved concept→failure→fix blocks. Narrative design extracted to
+  `docs/talk/logic-flow.md`, which carries an **assumptions register**.
+
+**Status:** Approved (design); failure catalog at v2.3 (see §10.11)
 **Author:** phucvd
 
 ---
 
 ## 1. Context and problem
 
-A knowledge base was already delivered to the NOC team. It failed — not because
-knowledge was missing, but because it was **unfindable**. NOC cannot locate or
-confirm the relevant procedure, so they escalate to the production/development
-team on almost every alert.
+A knowledge base was delivered to the NOC team. It works for the cases NOC
+already recognises — **familiar incidents are found and handled**. It fails on
+the complicated ones: NOC cannot locate or confirm the relevant procedure, so
+those escalate to the production/development team.
 
-One category of escalation is the **repeat incident**: the same failure has
-occurred several times, a playbook already exists, and NOC cannot recall or find
-it. The development team wants those calls rejected.
+**Three tiers, and they need different responses:**
 
-The root cause is findability, which is precisely and only what retrieval
-fixes. Writing more documentation would not have helped. This is the honest
-motivation for the project and the opening of the presentation.
+| Tier | Volume | What happens today | What the system should do |
+|---|---|---|---|
+| **Familiar** | — | NOC handles it | **Nothing.** No system needed here |
+| **A guide exists, but this operator does not recognise the case** | Small | Escalates anyway | **Answer**: give the playbook and the step |
+| **Complicated or new** | **The bulk** | Escalates | **Escalate with evidence** (§7.4) |
+
+The first row is stated deliberately: **the system adds no value to cases NOC
+already handles.** Claiming otherwise would inflate the business case and be
+disproved on contact with real traffic.
+
+The root cause of the other two tiers is findability, which is precisely what
+retrieval addresses. This is the honest motivation for the project and the
+opening of the presentation.
+
+### 1.0 Why the complicated tier is large — hypothesis, not finding
+
+Offered by the author, **not stated by the development team**, and recorded here
+labelled so it is never presented as fact:
+
+> NOC covers multiple products; cases new to an operator are frequent; diagnosis
+> needs deep production knowledge; new staff join often and experienced staff
+> leave. Knowledge therefore does not accumulate in people — so it has to
+> accumulate in the system.
+
+This is a sharp argument for retrieval *if* it holds. It is **testable** against
+ticket data before the seminar: escalation rate against operator tenure, and the
+share of escalations whose subject already appears in an older resolved ticket.
+Running that check converts a hypothesis into a finding, and the design's own
+"never guess" principle demands it before the claim is made on stage.
 
 ### 1.1 What the stakeholder interview corrected
 
@@ -87,12 +124,12 @@ Optimizing for deflection rate therefore optimizes for the minority. There are
 
 | Slice | Volume | Correct response | Metric |
 |---|---|---|---|
-| **Easy** — a guide already exists | Small | **Deflect.** Remind, don't answer | Deflection rate (§8.2) |
-| **Hard** — production bug, novel | **Large** | **Do not deflect. Accelerate.** | **Time-to-context** (§7.4) |
+| **Easy** — a guide exists | Small | **Answer**: the playbook and the step | Answer rate + false-answer rate (§8.2) |
+| **Hard** — production bug, novel | **Large** | **Do not answer. Accelerate.** | **Time-to-context** (§7.4) |
 
-For the hard slice the dev team still gets paged, and should. §7.3 already
-identifies false deflection as the dangerous error, and a novel production bug is
-exactly where wrongly deflecting prolongs an outage. The win is not avoiding the
+For the hard slice the dev team still gets paged, and should. §7.3 identifies
+**false answering** as the dangerous error, and a novel production bug is exactly
+where a confident wrong answer prolongs an outage. The win is not avoiding the
 call — it is that the engineer arrives holding the module design document, the
 logic diagram, the three most similar past incidents, the recent deploys touching
 that service, and the module owner. Twenty minutes of digging becomes seconds.
@@ -161,8 +198,9 @@ The session succeeds if a colleague can afterwards:
 | S4 | Refuse to trust an unmeasured claim | They ask "what's the baseline?" when someone demos a RAG system |
 | S5 | Reproduce the demo | `docker compose up` on a modest laptop works |
 
-**System-level success criterion (demo):** deflection rate on the gold question
-set, subject to a hard constraint on false deflection (§7.3).
+**System-level success criterion (demo):** answer rate on the gold question set,
+subject to a hard constraint on **false answers** (§7.3), plus time-to-context on
+the escalated majority (§7.4).
 
 ## 5. Architecture
 
@@ -558,8 +596,8 @@ corpus design — volume is not the point.
 | Two runbooks contradict; one is ~2 years stale | Metadata filtering and recency |
 | Two services throw near-identical errors | Metadata scoping by service |
 | Correct document exists but ranks ~7th | Reranking |
-| Question with no answer anywhere in the corpus | INSUFFICIENT verdict — refuse to guess |
-| Repeat incident with an existing playbook | SELF_SERVE verdict — the deflection case |
+| Question with no answer anywhere in the corpus | ESCALATE — refuse to guess, escalate with evidence |
+| Repeat incident with an existing playbook | ANSWER — playbook + step |
 | P1-severity incident that also has a playbook | Severity gate must override deflection |
 | Acronym used only in tickets, never defined in docs | Domain vocabulary map — not an embedding problem |
 | **Signal dilution**: the answer sentence buried inside a ~70-word paragraph among topical distractors | The *one* case where a cross-encoder reliably helps (§9.4) |
@@ -647,39 +685,72 @@ artifacts, no real screenshots in slides — are unchanged and still binding,
 because they protect against **publication**, which is a separate risk from
 transmission.
 
-## 7. The product: a triage verdict, not prose
+### 6.6 Multi-language document versions
 
-The primary output is a **verdict**, because the business goal is call
-deflection rather than conversation.
+The real corpus carries **the same document in English, Vietnamese and
+Japanese**. This is a harder problem than the mixed-language prose earlier
+sections assumed, and it produces failures nothing else in the design catches.
 
-| Verdict | Condition | NOC sees |
+| Failure | Why it happens | Fix |
 |---|---|---|
-| `SELF_SERVE` | Playbook or matching past incident found, severity below gate | Steps + citations + "incident #4471 was identical, resolved by NOC" — escalation rejected |
-| `ESCALATE` | Novel symptom, or severity at/above gate | Page dev team, **with retrieved context attached** |
-| `INSUFFICIENT` | Nothing retrieved above threshold | Say so plainly. Never fabricate steps |
+| **Top-k flooding** | One question retrieves three translations of one document, spending three of five slots on a single answer | Group by `doc_id` **before** applying top-k |
+| **Citation language** | The best-scoring version may be Japanese; the operator reads Vietnamese | Cite the version used; render the answer in Vietnamese |
+| **Language-blind dedup** | A content hash cannot detect it — the bytes genuinely differ | Dedup on `doc_id`, not content |
+
+Metadata required at ingest: **`doc_id` + `language` + `version`**. Cheap to
+capture, impossible to reconstruct later.
+
+**Answers are always in Vietnamese**, because the reader is NOC. This is a firm
+requirement, and an unusual one: retrieval ranges across all three languages
+while generation is pinned to one. Almost no tutorial covers this shape, and it
+is exactly the team's situation.
+
+> **Translation drift is *not* a headline risk here.** The team updates all
+> versions together as a matter of procedure. It is worth one sentence in the
+> seminar — *if your versions ever update separately this becomes your worst
+> failure, because both look current* — but it is not dramatised into a demo beat
+> it does not deserve.
+
+## 7. The product: found, or not found
+
+Two outcomes, revised in v2.3 to match how the team actually works.
+
+| Outcome | Condition | Who sees what |
+|---|---|---|
+| **ANSWER** | The knowledge base covers the case | NOC gets **the playbook and the step to take**, cited, in Vietnamese (§6.6) |
+| **ESCALATE + evidence** | It does not, or severity is at/above the gate | Developer is paged **holding** related design docs, similar past incidents, and *what was searched and not found* (§7.4) |
+
+**"Answer" means give them the procedure, not a conclusion.** The output points
+NOC at the playbook and the specific step — it does not replace their judgment
+with a sentence. That preserves the operator's ability to verify what they are
+about to do, which is what makes the answer trustworthy at 3 a.m., and it is
+what the development team asked for.
 
 ### 7.1 Trust is a hard requirement
 
-Deflection only works if NOC trusts the verdict. An uncited "you can handle
-this" is ignored and the call happens anyway. Therefore every `SELF_SERVE`
-response **must** carry citations to the specific runbook section or incident
-ID. Citations are a functional requirement, not presentation polish.
+An uncited answer is ignored and the call happens anyway. Every ANSWER response
+**must** cite the specific runbook section or incident ID. Citations are a
+functional requirement, not presentation polish.
 
 ### 7.2 Severity gate
 
-Severity at or above P1 escalates **even when a playbook exists**. Deflection
-optimizes for the dev team's time; the severity gate ensures it never does so
-at the cost of an outage.
+Severity at or above P1 escalates **even when a playbook exists**. Answering
+optimizes for the dev team's time; the severity gate ensures it never does so at
+the cost of an outage.
 
 ### 7.3 The dangerous error
 
-**False deflection** — telling NOC to self-serve an incident that genuinely
-needed the dev team — is the failure that destroys the system's credibility and
-prolongs outages. It is weighted far above false escalation.
+**False answer** — confidently handing NOC a procedure from a knowledge base
+that does not actually cover the case. It destroys credibility and prolongs
+outages, and it is weighted far above unnecessary escalation.
 
-Target: maximize deflection rate subject to **false deflection rate ≈ 0** on
-the gold set. Stating this precision/recall trade-off explicitly, and measuring
-it, is the most credibility-earning part of the presentation.
+Target: maximize answer rate subject to **false-answer rate ≈ 0** on the gold
+set. Stating this precision/recall trade-off explicitly, and measuring it, is
+the most credibility-earning part of the presentation.
+
+**Escalation is not a failure state.** It is the correct output for the bulk of
+volume (§1), and its quality is measured separately (§7.4). A system that
+escalates with good evidence is working exactly as designed.
 
 ### 7.4 The context packet — the hard slice
 
@@ -738,9 +809,9 @@ weakness visible, and each is scored separately (§8.4).
 | **Signal dilution** (buried answer, long chunk) | 5 | The one justified reranker case (§9.4) |
 | **Negation** | 3 | Persistent blind spot — needs question parsing, not ranking |
 | **Listing / counting** | 3 | Retrieval is the wrong tool; needs a structured query |
-| Repeat incident with playbook | 5 | SELF_SERVE deflection |
+| Repeat incident with playbook | 5 | ANSWER — playbook + step |
 | **Hard / novel production bug** | 6 | **Context packet quality (§7.4)** — the majority slice |
-| Unanswerable | 3 | INSUFFICIENT — refusal to guess |
+| Unanswerable | 3 | ESCALATE — refusal to guess |
 
 The three parsing categories are answerable **only** from a table, a scanned
 page, or an image. They score zero at P0 by construction — which is the point:
@@ -765,8 +836,8 @@ containing only questions the system can answer would prove nothing.
 | `recall@5`, `MRR` | Retrieval quality, independent of the LLM |
 | Groundedness (LLM judge) | Answer supported by retrieved text |
 | Correctness (LLM judge) | Answer matches the gold answer |
-| **Deflection rate** | The business metric for the easy slice |
-| **False deflection rate** | The dangerous error (§7.3) |
+| **Answer rate** | The business metric for the small answerable slice |
+| **False-answer rate** | The dangerous error (§7.3) |
 | **Time-to-context** vs a human baseline | The business metric for the **majority** slice (§7.4) |
 | **Packet precision** — share of packet items an engineer rates relevant | A packet of noise is worse than none; it trains people to ignore it |
 | Refusal accuracy on unanswerable | Does it decline to guess |
@@ -881,11 +952,11 @@ revision, puts the cross-encoder reranker **last** rather than fourth.
 | **L1** | BM25 + Vietnamese word segmentation | L0 fails on paraphrase | trivial |
 | **L2** | Dense embeddings (**Qwen3-Embedding-4B**, hosted — defines the index) | L1 fails on semantic / cross-lingual | index build |
 | **L3** | Hybrid, RRF fusion (L1's BM25 supplies the sparse arm) | L2 fails on error codes and identifiers | negligible at query time |
-| **L4** | **Structure-first**: question parsing + classify-before-retrieve + metadata pre-filter | Wrong-service, stale, negation or listing questions fail | deterministic, ~free |
+| **L4** | **Structure-first**: question parsing + classify-before-retrieve + metadata pre-filter + **`doc_id` grouping before top-k** (§6.6) | Wrong-service or negation questions fail; translations flood the results | deterministic, ~free |
 | **L5** | **Domain vocabulary map** (acronyms, VI↔EN term pairs) | Internal jargon still misses | human curation, no runtime cost |
 | **L6** | **Embedding head-to-head** — Qwen3-Embedding-4B vs BGE-M3, plus task instructions | Semantic recall still short | reindex; no added latency |
 | **L7** | Cross-encoder reranker (**`qwen3-rerank-0.6B`**, hosted) — see §9.4 | Signal dilution persists after L0–L6 | ~250 ms **per query** |
-| **L8** | Verdict logic + severity gate + **context packet** (§7.4) | Retrieval is good but calls still arrive | logic only |
+| **L8** | Answer/escalate logic + severity gate + **context packet** (§7.4), generation pinned to Vietnamese (§6.6) | Retrieval is good but calls still arrive | logic only |
 
 Three rungs — L4, L5, L6 — sit between hybrid search and reranking, and all
 three are cheaper at query time than a reranker. That ordering is the central
@@ -980,6 +1051,8 @@ Below is v1, grouped by pipeline stage.
 | F0.11 | RAG added; output still has the wrong tone or format | Behaviour problem treated as a knowledge problem | Fine-tuning changes behaviour; RAG changes knowledge |
 | F0.12 | GraphRAG's preprocessing cost paid for single-hop questions | Multi-hop machinery on non-multi-hop traffic | +27.23 on multi-hop vs +0.47 on general QA — check your question mix |
 | F0.13 | Retrieval runs on every query, including ones needing none | No adaptive gating | Self-RAG / CRAG / deterministic routing (L4) |
+| F0.14 | **CAG adopted on shared model infrastructure** | Cached corpus prefix is evicted by other tenants; the benefit that justified CAG disappears | Ask first: do you *own* the model instance? (§11.0) |
+| F0.15 | Technique chosen on window size alone | Operational constraints — tenancy, cache residency, growth — never considered | Decide on the constraint that binds, not the one that is published |
 
 ### 10.2 Ingestion and parsing
 
@@ -1007,6 +1080,9 @@ rather than loud. Nothing downstream can repair a fact lost here.
 | F1.17 | Same runbook answers twice, differently | Ingested as both DOCX and exported PDF | Cross-format dedup on content hash |
 | F1.18 | Citation points at a whole 40-page file | Parser kept no page or bounding-box provenance | Element-level provenance (Docling) |
 | F1.19 | Garbage accepted because nobody looked | Parsing quality never measured | NED / TEDS against source (§6.1) |
+| F1.20 | Three of five results are the same document | Translations of one document indexed as three | Group by `doc_id` before top-k (§6.6) |
+| F1.21 | Dedup passes, duplicates remain | Content hash cannot see across languages | Dedup on `doc_id`, not bytes |
+| F1.22 | Citation points at a document the reader cannot read | Best-scoring version was Japanese | Cite the version used; answer in the reader's language |
 
 ### 10.3 Chunking
 
@@ -1079,12 +1155,13 @@ rather than loud. Nothing downstream can repair a fact lost here.
 
 | ID | Symptom | Cause | Fix / search term |
 |---|---|---|---|
-| F7.1 | **Outage prolonged by a wrong "you can handle this"** | False deflection | Severity gate; conservative thresholds |
-| F7.2 | Everything escalates; no value delivered | Thresholds too conservative | Tune against deflection rate |
+| F7.1 | **Outage prolonged by a confidently wrong procedure** | False answer — the KB did not cover the case | Severity gate; conservative thresholds |
+| F7.2 | Everything escalates without evidence | Thresholds too conservative, packet not built | Tune answer rate; measure packet quality |
 | F7.3 | A P1 was deflected | No severity awareness | Severity gate (§7.2) |
 | F7.4 | Verdict ignored | No citations / no trust | See F6.2 |
 | F7.5 | Same wrong deflection recurs | No feedback loop | Log verdicts + outcomes |
-| F7.6 | **System optimized for the minority of volume** | Deflection rate chosen before question volumes were measured | Interview the stakeholders; count question shapes first (§1.1) |
+| F7.6 | **System optimized for the minority of volume** | A metric chosen before question volumes were measured | Interview the stakeholders; count question shapes first (§1.1) |
+| F7.14 | Value claimed for cases users already handle unaided | Baseline usage never established | State the tier that needs nothing (§1) |
 | F7.7 | Escalation treated as system failure | `ESCALATE` framed as a miss rather than a product | Context packet with its own metric (§7.4) |
 | F7.8 | Engineer ignores the packet | Packet padded with loosely-related material | Measure packet precision, not packet size |
 | F7.9 | Agent asserts a root cause and is wrong | Recommendation presented as conclusion | Ranked hypotheses with evidence; the engineer decides |
@@ -1200,11 +1277,44 @@ The primary take-home artifact for colleagues.
 | Tier | Problem | Stack | Setup | Trade-off |
 |---|---|---|---|---|
 | **0** | ~20 docs, one team | **No RAG.** Long context or grep | Minutes | Breaks past ~100 docs |
+| **0b** | Stable corpus that fits the context window, **and you own the model instance** | **CAG** — preload the corpus, precompute the KV cache, no retrieval at runtime | Hours | Rebuild the cache on every document change; see below |
 | **1** | Team KB, non-technical users want a chatbot | Flowise / AnythingLLM / Dify | ~1 hour | Limited retrieval tuning |
 | **2** | Messy scanned PDFs, tables, tuning required | **Docling** (or RAGFlow / MinerU / Marker) + own service | ~half a day | Complexity |
 | **3** | Multi-source, ACL, audit, SLA | Qdrant/pgvector + Haystack + eval harness | Weeks | Not low-code |
 | **4** | Agent over a codebase | **No vector store.** Agentic search + MCP | Hours | No semantic / cross-lingual matching |
 | **5** | Answers live in charts, dense layouts, slide decks | Visual retrieval — ColPali / ColQwen2, or multimodal embeddings (Cohere Embed 4, voyage-multimodal-3) | Weeks, **needs GPU** | Cost; caption-and-index gets most of the value first |
+
+### 11.0 Why CAG was rejected here — and the criterion it contributes
+
+**Cache-Augmented Generation** preloads the whole corpus into context, precomputes
+the KV cache, and serves with no retrieval at runtime. It is the optimised form of
+long context: it attacks exactly long context's weakness, cost per query. It is a
+genuine candidate, and it was considered and rejected.
+
+1. **The model host is shared across teams.** CAG's benefit depends entirely on
+   the cached corpus prefix staying **resident** in GPU memory. With multiple
+   tenants, each needs its own large prefix competing for the same finite memory,
+   so caches are evicted and recomputed — destroying the advantage that justified
+   CAG in the first place. **CAG assumes you own the model instance.**
+2. **The corpus will grow beyond EDR.** RAG scales by adding to an index; CAG
+   requires rebuilding the cache and re-fitting the window each time.
+
+The published RAG-vs-CAG comparisons argue about **context window size**. That is
+the less useful criterion. The one that actually decided it here:
+
+> **Do you own the model instance, or share it?** Shared hosting rules out any
+> technique that depends on resident per-corpus cache state.
+
+Presenting this as a *rejection with a stated reason* is worth more than omitting
+it. It is a worked example of the method the whole seminar teaches: consider the
+option, name the constraint that kills it, move on.
+
+**A rule that cuts across every tier:** at any tier, spend on structure before
+spending on ranking. Classification, metadata filtering, question routing and a
+curated vocabulary are cheap, deterministic, and inspectable. Rerankers are
+expensive per query, unpredictable, and — on the evidence in §9.4 — frequently
+neutral. A colleague who remembers only this one rule will still make better
+decisions than the reference architecture diagrams they will be shown.
 
 ### 11.1 Which strategy for which question shape
 
@@ -1270,71 +1380,73 @@ and knowing that is worth more than a default.
 Tiers 0 and 4 earn the audience's trust by stating when *not* to use the
 technology being presented.
 
-**A rule that cuts across every tier:** at any tier, spend on structure before
-spending on ranking. Classification, metadata filtering, question routing and a
-curated vocabulary are cheap, deterministic, and inspectable. Rerankers are
-expensive per query, unpredictable, and — on the evidence in §9.4 — frequently
-neutral. A colleague who remembers only this one rule will still make better
-decisions than the reference architecture diagrams they will be shown.
-
 ## 12. Presentation run-of-show (~2 hours)
 
-| Time | Segment |
+Full narrative design, including the argument chain, the assumptions register and
+audience-state transitions: **`docs/talk/logic-flow.md`**. Summary below.
+
+**Audience:** technical people who *use* AI but do not specialise in it.
+**"Hands-on" means implementable afterwards, not typing in the room** — so each
+block ends by naming the repo artifact that produced the fix.
+
+| Time | Act |
 |---|---|
-| 0:00–0:10 | **The real story** — we gave NOC a knowledge base; they still call us |
-| 0:10–0:25 | **Fundamentals** — why RAG vs the alternatives, the stages, and the evolution as a chain of failures. Material and cutting guidance: `docs/concepts/fundamentals.md` |
-| 0:25–0:40 | **Do you even need RAG? — run live.** Same question through agentic search over code and RAG over docs (§5.5). Each wins on its own material |
-| 0:40–1:20 | **Live demo — climbing the ladder, failure by failure** |
-| 1:20–1:30 | **The hard slice** — context packet and time-to-context (§7.4, §1.1) |
-| 1:30–1:42 | **Decision matrix + question-shape guide** (§11, §11.1) |
-| 1:42–1:50 | **Failure catalog** as the take-home; retrieval vs memory (§11.2) |
-| 1:50–2:00 | Q&A, adoption checklist, VI/EN glossary |
+| 0:00–0:10 | **I — "That's my situation."** Three real escalations from colleagues; the three tiers (§1) |
+| 0:10–0:25 | **II — Just enough foundation.** What RAG does; ingest fails silently vs query fails visibly; the tool options and **how three were ruled out** (§11.0). Live: grep vs RAG |
+| 0:25–1:20 | **III — Concept → failure → fix, eight times** |
+| 1:20–1:40 | **IV — "I know what to do Monday."** Escalation as a product; decision matrix; security told as a mechanism |
+| 1:40–1:50 | **V — Where this sits.** The layer map; evolution as failures they watched |
+| 1:50–2:00 | Handouts, adoption checklist, Q&A |
 
-The 0:25–0:40 segment becomes a **live comparison** rather than cited evidence.
-It costs no extra time — it replaces slides that made the same claim — and it
-answers the interview's second question by demonstration instead of assertion.
+**The theory block is gone.** v2.3 interleaves teaching with demonstration: this
+audience cannot hold eight abstractions for 25 minutes and then map them onto a
+demo delivered later. Each concept is taught in ≤2 minutes **immediately before**
+the demo that shows it, and no idea runs past 90 seconds without something
+concrete on screen.
 
-The demo block is structured as **failure → named fix**, never as a feature
-tour. Each fix is a concept the audience can subsequently search for:
+**The RAG-generation history moved to Act V.** Delivered before the basics it is
+noise; delivered after they have climbed the ladder themselves, every arrow is a
+failure they personally watched.
 
-0. **The document that isn't there.** Ask a question whose answer sits in a
-   scanned runbook. Nothing comes back. Show that the file *is* in the index —
-   and extracted to an empty string. → *parsing, OCR, and why silent failures
-   outrank loud ones*
-1. Table answer returned with the wrong service's value → *table extraction*
-2. Baseline (L0/L1) fails a paraphrased question → *semantic search*
-3. Vietnamese question misses the English runbook → *multilingual embeddings*
-4. Error-code query returns nonsense → *hybrid search*
-5. Answer drawn from the stale runbook, wrong service → *classify-before-retrieve*
-6. "Which services do **not** …" fails at every rung → *question parsing; the
-   limit of similarity search*
-7. Internal acronym never matches → *domain vocabulary map*
-8. **The reranker experiment** → add it, measure it, and show the latency chart
-   against the per-category matrix. Expected outcome: it helps one category and
-   costs 100s of ms. **The audience watches a component get rejected on evidence.**
-9. Confidently wrong on an unknown → *grounding and refusal*
-10. Repeat incident → **SELF_SERVE verdict; the call is rejected**
-11. Hard production bug → **ESCALATE with a context packet.** The call goes
-    through, and the engineer arrives already holding the design doc, the logic
-    diagram and three similar past incidents → *accelerate, don't deflect*
+### Act III — the eight blocks
 
-**Beat 0 is deliberately first.** Before any talk of embeddings, the audience
-watches a document that is present, indexed, and utterly unreachable. That is
-the failure most likely to be sitting in their own knowledge base right now, and
-it costs nothing to check. Opening with it also earns the "quality in, quality
-out" principle rather than asserting it.
+| # | Concept taught | Failure shown | Fix | Min |
+|---|---|---|---|---|
+| 1 | Documents must be *parsed* before they can be found | Scanned runbook: indexed, present, **unreachable** | Parsing + OCR | 7 |
+| 2 | Meaning vs exact words | Paraphrase finds nothing | Semantic search | 5 |
+| 3 | **One document, three languages** | Three translations flood top-k; best source is English, reader needs Vietnamese | `doc_id` grouping + cross-lingual retrieval + **answer in Vietnamese** (§6.6) | 8 |
+| 4 | …but meaning loses exact strings | `SQ-2011` returns nonsense | Hybrid search | 6 |
+| 5 | Not all documents are equal | Answer from the wrong service or an older version | Metadata + routing | 5 |
+| 6 | Some questions retrieval cannot answer | "Which services do **not** …" fails throughout | Question parsing; the limit | 4 |
+| 7 | **Every tutorial's favourite component** | Reranker added — barely helps | **Measure it. Remove it.** | 8 |
+| 8 | Found or not found | Confidently wrong on an unknown, then a real repeat incident | Grounding, refusal, **playbook+step vs escalate** | 8 |
 
-**Beat 8 is the pivot.** Every RAG tutorial adds a reranker and declares victory;
-this one adds it, measures it, and takes it out. That single moment teaches the
-evaluation principle better than any slide about evaluation, and it inoculates
-the audience against the next vendor diagram they are shown.
+**Block 1 is first deliberately.** Before any talk of embeddings, the audience
+watches a document that is present, indexed and unreachable. Framed as *worth
+checking in your own knowledge base* — never as a claim about their systems. It
+earns "quality in, quality out" rather than asserting it.
 
-Together the two beats frame the whole session: **the cheapest fix came first
-and mattered most; the most fashionable fix came last and may not matter at
-all.**
+**Block 7 is the pivot**, landing at ~1:05 — the strongest moment placed at the
+weakest point of the attention curve. Every RAG tutorial adds a reranker and
+declares victory; this one adds it, measures it, and takes it out.
 
-Payoff: the same service consumed by Open WebUI (OpenAI-compatible endpoint),
-by an agent (MCP), and rebuilt no-code in Flowise.
+Together they frame the session: **the cheapest fix came first and mattered most;
+the most fashionable fix came last and may not matter at all.**
+
+### The three credibility purchases
+
+Planned concessions, not improvisations. Technical audiences trust whoever states
+limits; these are the first thing a nervous presenter cuts and the last thing they
+should.
+
+| When | Conceded | Buys |
+|---|---|---|
+| 0:20 | "For code, grep beats what I'm about to show you" | The right to advocate RAG later |
+| Block 7 | "We measured the reranker and removed it" | The evaluation principle, permanently |
+| 1:20 | "The system adds nothing to the cases NOC already handles" | Belief in every number after it |
+
+Payoff: the same service consumed by Open WebUI (OpenAI-compatible endpoint), by
+an agent (MCP), and rebuilt no-code in Flowise.
 
 ## 13. Repository layout
 
@@ -1355,7 +1467,7 @@ rag/
 │   ├── app.py                 /v1/chat/completions, /retrieval
 │   ├── parsers/               p0_raw, p1_layout, p2_tables, p3_ocr, p4_caption
 │   ├── strategies/            bm25, dense, hybrid, structured, vocab, reranked
-│   ├── verdict.py             SELF_SERVE / ESCALATE / INSUFFICIENT
+│   ├── verdict.py             ANSWER (playbook+step) / ESCALATE (+evidence)
 │   ├── vocabulary.yaml        acronyms + VI<->EN term pairs (§9.2 L5)
 │   ├── ingest.py
 │   └── mcp_server.py
@@ -1368,7 +1480,7 @@ rag/
     ├── failure-catalog.md
     ├── decision-matrix.md
     ├── concepts/              diagrams, VI/EN glossary
-    └── talk/run-of-show.md
+    └── talk/logic-flow.md     narrative design + assumptions register
 ```
 
 ## 14. Constraints and risks
