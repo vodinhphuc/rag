@@ -13,6 +13,17 @@ venv/
 .env.*
 !.env.example
 
+# ---------------------------------------------------------------------------
+# REAL COMPANY DOCUMENTS — NEVER COMMIT. This repo is PUBLIC.
+# Internal EDR install/troubleshooting/operations docs describe tamper
+# protection, exclusions, detection thresholds and console endpoints.
+# Publishing them would expose the company's endpoint defenses.
+# ---------------------------------------------------------------------------
+corpus/private/
+corpus/real/
+*.private.*
+private/
+
 # Local model + index data
 models/
 qdrant_storage/

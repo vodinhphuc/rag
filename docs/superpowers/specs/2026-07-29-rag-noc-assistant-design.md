@@ -24,6 +24,14 @@
   security group to the catalog (§10.10) — retrieval is an untrusted input
   channel, which v1.7 omitted entirely — plus 8 further entries.
 
+- **v1.9** (2026-08-02) — **two corpora**. Real internal EDR documentation is
+  available for the internal demo. Split into a generated corpus (committed,
+  measurable, now EDR-themed as "SENTRIQ") and a real corpus (`corpus/private/`,
+  gitignored, local only). Added §6.4 on what real documents change — degraded
+  parsing ground truth, but **gold questions mined from real NOC tickets**, which
+  addresses F0.4 — and §6.5 data-boundary rules. **This repository is public**;
+  a pre-commit guard now enforces the boundary.
+
 **Status:** Approved (design); failure catalog at v1.8 (see §10.11)
 **Author:** phucvd
 
@@ -273,17 +281,37 @@ demonstrates the retrieval half and names the rest as the graduation path.
 
 ## 6. Corpus design
 
-An authored corpus for a fictional order/payment processing service.
-Authored rather than anonymized because (a) real documents cannot ship in a
-repo colleagues clone, and (b) authoring is what makes a **gold answer key**
-possible, without which nothing can be measured.
+**Two corpora, different jobs.** v1.9 splits what was one authored corpus, after
+the author confirmed access to real internal EDR documentation — install guides,
+troubleshooting material, and NOC/SOC operations docs.
 
-**Volume:** ~75 documents.
+| | **Generated — "SENTRIQ EDR"** | **Real — company EDR docs** |
+|---|---|---|
+| Content | Authored markdown, rendered to binaries | Actual install / troubleshoot / NOC-SOC operations docs |
+| Location | `corpus/source/`, `corpus/rendered/` — **committed** | `corpus/private/` — **gitignored, local only** |
+| Job | Learning track, reproducibility, parsing measurement, public demo | Internal demo credibility |
+| Parsing ground truth | Authored source ⇒ NED/TEDS measurable (§6.1) | None — see §6.4 |
+| Gold questions | Authored around planted traps (§6.3) | **Mined from real NOC tickets** (§6.4) |
+| Generation LLM | Cloud API, unrestricted | Restricted — see §6.5 |
+
+Neither corpus alone is sufficient. The generated one can be measured precisely
+but is invented; the real one is credible but cannot be published or diffed
+against a source. Used together, each covers the other's weakness — and the
+comparison between them is itself worth a slide.
+
+**Domain change (v1.9):** the fictional project moves from an order/payment
+service to **SENTRIQ**, an invented EDR product — invented vendor, invented
+architecture, no relationship to any real product. Matching the real corpus's
+domain means the learning track exercises the same document shapes, vocabulary
+and question types that the internal demo will face, so the lessons transfer
+directly instead of by analogy.
+
+**Volume:** ~75 documents (generated corpus).
 
 | Set | Count | Character |
 |---|---|---|
-| Runbooks / playbooks | ~15 | Vietnamese prose, English technical terms |
-| Architecture & config reference | ~10 | Fully English, AI-generated register |
+| NOC/SOC runbooks & playbooks (agent offline, alert triage, exclusion requests) | ~15 | Vietnamese prose, English technical terms |
+| Install / upgrade guides & architecture reference | ~10 | Fully English, vendor-documentation register |
 | Past incidents / tickets | ~50 | Mixed VI/EN; fields: symptom, service, severity, date, root cause, resolution, resolved_by |
 
 **Language mix is deliberate and realistic:** Vietnamese runbooks containing
@@ -357,6 +385,74 @@ corpus design — volume is not the point.
 | A two-column PDF where naive extraction interleaves the columns | P1 reading order — the answer becomes gibberish |
 | A page footer repeated on all 30 pages | P1 boilerplate stripping; otherwise 30 near-duplicate chunks |
 | The same runbook present as both DOCX and exported PDF | Cross-format deduplication |
+
+### 6.4 The real corpus — what changes
+
+**Parsing measurement degrades, and that must be stated rather than hidden.** A
+real PDF *is* the source; there is no markdown to diff against, so NED and TEDS
+(§6.1) cannot be computed the way they can on the generated corpus. Two honest
+substitutes:
+
+1. **Hand-transcribe ~5 representative pages** — one table-heavy, one scanned,
+   one two-column, one with a diagram, one plain. Small enough to be a morning's
+   work, sufficient to catch a parser that silently drops rows.
+2. **Silent-loss detection still works without ground truth**: any document
+   extracting to near-empty text is flagged regardless (F1.6). This is the check
+   that matters most and it needs no answer key.
+
+**Gold questions get much better, and this is the real prize.** Catalog entry
+F0.4 — *demo works, production does not, because it was evaluated on invented
+questions* — is the failure this project was most exposed to. Real NOC tickets,
+chat logs and escalation records contain the questions operators **actually
+ask**, in the words they actually use, with the answers that actually resolved
+them. Mining ~40 of those is worth more than 200 invented ones.
+
+It also gives the deflection metric (§7.3) a real denominator: of the last 100
+escalations, how many had an existing playbook? That number *is* the business
+case, and nobody currently knows it.
+
+**Audience widens to NOC + SOC.** SOC question shapes differ from NOC's — alert
+triage, IOC lookup, "is this detection a false positive", threat-hunting
+context. Worth a distinct question category if SOC docs are in scope.
+
+**The security catalog group becomes acute.** §10.10 is no longer theoretical:
+an assistant over EDR operations documentation that can be steered by injected
+text is a genuinely serious scenario, and EDR alert data routinely contains
+attacker-controlled strings — filenames, command lines, URLs. For a SOC
+audience this is the most attention-earning part of the whole seminar.
+
+### 6.5 Data boundary rules for the real corpus
+
+Binding, because this repository is public and the material is security-sensitive.
+
+| Rule | Why |
+|---|---|
+| Real documents live only in `corpus/private/` (gitignored) | EDR troubleshooting docs describe tamper protection, exclusions, detection thresholds and console endpoints — a map of the company's endpoint defenses |
+| `scripts/check-no-private.sh` runs as a pre-commit hook | Blocks private paths, stray document binaries and confidentiality markers. A `.gitignore` alone fails the moment someone runs `git add -f` |
+| Nothing derived from real documents is committed — no chunks, no indexes, no captions, no eval questions containing verbatim content | Derived artifacts leak content just as effectively as originals |
+| Screenshots for slides are recreated on the generated corpus | Demo recordings and screenshots are the most common accidental leak |
+| **Retrieval is local; generation is not** | See below |
+
+**The cloud-generation problem.** The serving design (§5.3) sends prompts to a
+cloud LLM, and P4 sends document images to a cloud VLM. Against the real corpus
+that means proprietary security documentation leaving the company. Three options,
+in preference order:
+
+1. **Retrieval-only demo on the real corpus.** Embeddings (BGE-M3) and the vector
+   store are entirely local, so retrieval never leaves the machine. Show the
+   ranked chunks, citations and the verdict — with **no generated prose**. For
+   deflection this is most of the value already: "here are the three relevant
+   playbook sections and the matching past incident" *is* the answer. It needs no
+   approval and demonstrates the retrieval half honestly.
+2. **Get explicit approval** for a specific model and endpoint, with the retention
+   policy checked. Run this in parallel; it takes longer than the project does.
+3. Local generation model — does not fit this host's budget (§5.3), so it would
+   require different hardware.
+
+**Default: option 1 for the real corpus, cloud generation for the generated
+corpus only.** The seminar then shows full end-to-end behaviour on SENTRIQ and
+grounded retrieval on the real docs — and the reason for the difference is itself
+a lesson colleagues need, since they will face exactly this constraint.
 
 ## 7. The product: a triage verdict, not prose
 
