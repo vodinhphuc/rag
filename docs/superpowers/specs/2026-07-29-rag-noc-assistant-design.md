@@ -32,15 +32,18 @@
   addresses F0.4 — and §6.5 data-boundary rules. **This repository is public**;
   a pre-commit guard now enforces the boundary.
 
-- **v2.0** (2026-08-02) — **fully local inference, both environments.** The demo
-  runs on the company's self-hosted Qwen 3.6; the learning host has an RTX 3090
-  (24 GB). §5.3 rewritten as a VRAM budget with a WSL2/CUDA setup list. Cloud
-  APIs are gone, so §6.5's retrieval-only compromise is retired and the real
-  corpus gets a full end-to-end demo. Qwen3.6-35B-A3B is vision-capable, so P4
-  captioning drops its separate VLM. Visual retrieval's non-goal justification
-  corrected — no longer a capability limit, only scope (§3).
+- **v2.0** (2026-08-02) — no third-party APIs. §6.5's retrieval-only compromise
+  retired; the real corpus gets a full end-to-end demo. Visual retrieval's
+  non-goal justification corrected — no longer a capability limit, only scope.
+- **v2.1** (2026-08-02) — **corrects v2.0's conflation of the two hosts.** They
+  are different machines with opposite constraints: the *learning* host has the
+  RTX 3090; the *demo* host has **no GPU** (WSL2, 8 GB) and calls the company's
+  self-hosted Qwen 3.6 over the internal network. §5.3 restructured into
+  per-environment budgets, a one-codebase/two-configs contract, a **measurement
+  rule** (latency figures must come from the demo host), and two open questions
+  about the company endpoint's capabilities.
 
-**Status:** Approved (design); failure catalog at v2.0 (see §10.11)
+**Status:** Approved (design); failure catalog at v2.1 (see §10.11)
 **Author:** phucvd
 
 ---
@@ -203,23 +206,31 @@ A third contract, `POST /retrieval` (Dify's External Knowledge API shape), is
 implemented as a thin alias so the tier-1 platform path can be demonstrated
 without installing Dify.
 
-### 5.3 Component budget — fully local, both environments
+### 5.3 Two environments, one codebase
 
-v2.0 replaces the cloud-API design. Both environments now self-host generation,
-so **nothing leaves the machine at any stage**.
+The learning host and the demo host are **different machines with opposite
+constraints**. Conflating them (as v2.0 briefly did) produces numbers that do not
+hold where it matters.
 
-| | Learning (home) | Demo (company) |
+| | **Learning (home)** | **Demo (company)** |
 |---|---|---|
-| GPU | RTX 3090, **24 GB VRAM** | company GPU host |
-| System RAM | 16 GB, ~8 GB to WSL2 | — |
-| Generation model | Qwen3.6 (local) | **Qwen 3.6, company self-hosted** |
+| Hardware | RTX 3090, **24 GB VRAM** | **No GPU.** WSL2, 8 GB RAM |
+| Generation | Local Qwen3.6 on GPU | **Company self-hosted Qwen 3.6, over the internal network** |
+| Embeddings | BGE-M3 on GPU | BGE-M3 on **CPU** — or the company endpoint, if it serves embeddings (§5.3.4) |
+| Reranker (L7) | GPU, ~100 ms | **CPU, ~seconds** |
+| P4 captioning | Local vision model on GPU | Company endpoint, only if vision-capable (§5.3.4) |
+| Parsing, OCR | CPU | CPU |
+| Data boundary | Synthetic corpus only | Real corpus; nothing leaves the company network |
 
-**Model parity is deliberate.** Learning on the same model family that serves the
-demo means prompt behaviour, citation formatting, refusal patterns and failure
-modes transfer directly. A prompt tuned against a different model is a prompt
-tuned twice.
+Nothing reaches a third party in either environment: at home everything is on
+the author's machine; at the company, generation goes to an internally hosted
+model over the internal network.
 
-#### VRAM — the budget that now matters
+**Model parity is deliberate.** Learning against the same family that serves the
+demo means prompt behaviour, citation formatting and refusal patterns transfer.
+A prompt tuned against a different model is a prompt tuned twice.
+
+#### 5.3.1 VRAM budget — learning host only
 
 Ingest and serving **never run concurrently**, which is what makes 24 GB enough.
 
@@ -241,28 +252,78 @@ at that size the KV cache alone would exhaust the card. RAG needs 8–32k. Setti
 this explicitly is the difference between a working rig and an out-of-memory
 error, and it is a lesson worth showing on stage.
 
-The 35B-A3B being **vision-capable** removes a whole component: P4 captioning no
-longer needs a separate VLM, and no document image leaves the machine. Its MoE
-design (35B total, 3B active) also keeps captioning fast despite the size.
+The 35B-A3B being **vision-capable** removes a whole component at home: P4
+captioning needs no separate VLM. Its MoE design (35B total, 3B active) keeps
+captioning fast despite the size.
 
-#### System RAM — no longer the binding constraint
+#### 5.3.2 RAM budget — demo host (no GPU, 8 GB WSL2)
 
-With models on the GPU, the WSL2 budget relaxes considerably.
+This is the environment the seminar actually runs on, so these are the numbers
+that must hold.
 
 | Serving | RAM |
 |---|---|
-| Retrieval service (thin; models are on GPU) | ~0.5 GB |
+| Retrieval service + BGE-M3 **on CPU** | ~2.5 GB |
 | Qdrant | ~0.5 GB |
 | Open WebUI | ~0.5 GB |
 | Flowise | ~1.0 GB |
-| **Total** | **~2.5 GB** of ~8 GB |
+| **Total** | **~4.5 GB** of 8 GB |
 
-Docling and OCR at ingest remain CPU/RAM work (~3 GB peak), still comfortable.
+| Ingest (offline, one-off) | RAM |
+|---|---|
+| Docling layout + TableFormer | ~2.0 GB |
+| OCR (Tesseract / EasyOCR) | ~1.0 GB |
+| Qdrant (writing) | ~0.5 GB |
+| **Peak** | **~3.5 GB** |
 
-#### WSL2 + CUDA — the setup failures to expect
+Generation costs this machine **nothing** — it is an HTTP call to the company's
+model host. That is what makes a GPU-less demo box viable at all.
 
-These are the ones that actually cost hours, and colleagues attempting this will
-hit exactly the same list:
+**CPU changes the reranker economics decisively.** A cross-encoder that costs
+~100 ms on the 3090 costs **seconds** on this host, because it scores every
+candidate at query time and nothing can be precomputed. The spec already places
+L7 last and expects it to fail (§9.4); running the demo on CPU makes that
+conclusion sharper, not weaker. Hypothesis H3 — that an embedding upgrade beats a
+reranker at lower query-time cost — is now very likely to hold, and the audience
+will see the latency difference rather than take it on faith.
+
+#### 5.3.3 One codebase, two configs
+
+The service is endpoint-agnostic by construction. Because it already speaks the
+OpenAI contract (§5.2), switching environments is configuration, not code:
+
+| Setting | Home | Company |
+|---|---|---|
+| `LLM_BASE_URL` | `http://localhost:11434/v1` | internal model host |
+| `EMBED_DEVICE` | `cuda` | `cpu` |
+| `RERANK_ENABLED` | experiment freely | off by default; enabled only to demonstrate its cost |
+| `CORPUS` | `corpus/rendered/` | `corpus/private/` |
+
+**Measurement rule.** Latency and cost figures presented at the seminar must be
+produced **on the demo host**. Retrieval-quality figures (recall, MRR, per-category
+scores) are hardware-independent and may be produced at home. Every result in the
+§8.4 matrix records which environment generated it. Showing 3090 latencies to an
+audience who will run on CPU would be the same failure this project exists to
+warn about.
+
+#### 5.3.4 Two open questions about the company endpoint
+
+Both change the design and neither is knowable from here:
+
+1. **Does it serve an embeddings API?** If yes, embeddings move off the demo
+   host's CPU and both latency and RAM improve materially. If no, BGE-M3 runs on
+   CPU — workable, since query-time embedding of a single short question is
+   modest, and ingest is offline.
+2. **Is it vision-capable?** P4 captioning of **real** EDR diagrams can only
+   happen on company hardware, since those images cannot leave the network. If
+   the endpoint has no vision support, P4 is demonstrated on the SENTRIQ corpus
+   only, and figure-answers in the real corpus stay unreachable — which should
+   then be reported as an open failure mode rather than quietly omitted.
+
+#### 5.3.5 WSL2 setup failures to expect
+
+Both hosts run WSL2, so item 4 applies to both; items 1–3 are GPU-specific and
+apply to the learning host only.
 
 1. **Never install an NVIDIA Linux driver inside WSL2.** The Windows driver is
    stubbed in as `libcuda.so`; installing the `cuda` meta-package overwrites the
@@ -274,18 +335,18 @@ hit exactly the same list:
    3–5× slower. Model weights and the document corpus belong on ext4 inside the
    WSL2 filesystem.
 
-With those right, WSL2 delivers 90–100% of native inference performance — the
-bottleneck is GPU memory bandwidth, not the OS layer.
+With those right, WSL2 delivers 90–100% of native inference performance on the
+learning host — the bottleneck is GPU memory bandwidth, not the OS layer.
 
-#### What this changes elsewhere
+#### 5.3.6 What this changes elsewhere
 
 | Was | Now |
 |---|---|
-| Generation via cloud API | Local Qwen3.6, both environments |
-| P4 captioning via cloud VLM | Local, vision-capable Qwen3.6-35B-A3B |
+| Generation via a third-party cloud API | Local GPU at home; **company-hosted Qwen 3.6** for the demo |
+| P4 captioning via cloud VLM | Local vision model at home; company endpoint for real docs, if vision-capable (§5.3.4) |
 | "Retrieval-only demo on real corpus" (§6.5) | Unnecessary — full end-to-end on real docs |
-| Cost per query measured in API spend | Measured in **latency and GPU capacity**; no marginal token cost |
-| Network dependency during the talk | **Removed** — a significant risk retired |
+| Cost per query measured in API spend | Measured in **latency**; no marginal token cost, but CPU makes reranking expensive (§5.3.2) |
+| Public-internet dependency during the talk | **Removed.** The demo still needs the company's internal network to reach the model host — worth a rehearsal check |
 
 **Rejected:** RAGFlow (16 GB minimum, x86_64 only — exceeds the host) and Dify
 (4–8 GB, 6–8 containers — heavy for the value it adds here). Both appear in the
@@ -969,6 +1030,9 @@ rather than loud. Nothing downstream can repair a fact lost here.
 | F8.8 | Ingest inexplicably slow | Corpus or weights on `/mnt/c/`, served over 9P at 3–5× penalty | Keep both on ext4 |
 | F8.9 | Prompts tuned on one model, deployed on another | No model parity between learning and production | Develop against the model you will serve |
 | F8.10 | "It's local, so it's private" | Self-hosted inference still writes prompt logs | Check retention on the serving stack (§6.5) |
+| F8.11 | **Benchmarks from the dev machine collapse in production** | Measured on a GPU workstation, deployed to CPU hosts | Measure latency where it will run (§5.3.3) |
+| F8.12 | Reranker acceptable in testing, unusable live | Cross-encoder scoring cannot be precomputed; CPU cost is seconds, not milliseconds | Treat reranking as a per-query cost on the *target* hardware |
+| F8.13 | Component assumed available on the shared model host | Endpoint serves chat but not embeddings or vision | Verify the endpoint's actual capabilities before designing around them (§5.3.4) |
 
 F8.5 closes the loop on the opening story and is the final slide.
 
@@ -1021,9 +1085,11 @@ F4.13, F6.6. **98 entries.** Output artifact: `docs/concepts/fundamentals.md`.
 - ✅ Retrieval security: prompt injection, exfiltration (§10.10)
 - ✅ Adaptive retrieval — Self-RAG, CRAG, FLARE (F0.13)
 
-**v1.9 → v2.0 (2026-08-02).** Local-GPU infrastructure added 5 entries,
-F8.6–F8.10 — VRAM sizing, broken CUDA passthrough, `/mnt/c/` slowness, model
-parity, and "local ≠ unlogged". **103 entries.**
+**v1.9 → v2.1 (2026-08-02).** Local-inference infrastructure added 8 entries,
+F8.6–F8.13 — VRAM sizing, broken CUDA passthrough, `/mnt/c/` slowness, model
+parity, "local ≠ unlogged", and the v2.1 additions: benchmarks measured on the
+wrong hardware, reranking that is affordable on GPU and unusable on CPU, and
+capabilities assumed of a shared model endpoint. **106 entries.**
 
 **Remaining research:**
 
@@ -1227,9 +1293,13 @@ rag/
 
 | Risk | Mitigation |
 |---|---|
-| **VRAM exhaustion** — 24 GB is enough only if managed | Cap context to 8–32k (KV cache dominates otherwise); ingest and serving never concurrent; reranker loaded only at L7 (§5.3) |
-| **WSL2 CUDA setup** | Documented failure list in §5.3; never install a Linux NVIDIA driver in WSL2; keep models and corpus off `/mnt/c/` |
-| System RAM (8 GB WSL2) | No longer binding — models are on GPU; ~2.5 GB of containers (§5.3) |
+| **Demo host has no GPU** — CPU embeddings, CPU reranking | Generation is offloaded to the company model host; L7 off by default; budget verified at ~4.5 GB of 8 GB (§5.3.2) |
+| **Numbers measured at home don't hold at the demo** | Measurement rule (§5.3.3): latency and cost figures must come from the demo host; the §8.4 matrix records the environment |
+| **VRAM exhaustion on the learning host** | Cap context to 8–32k (KV cache dominates); ingest and serving never concurrent (§5.3.1) |
+| **WSL2 CUDA setup** (learning host) | Failure list in §5.3.5; never install a Linux NVIDIA driver in WSL2 |
+| `/mnt/c/` slowness (**both hosts**) | Keep corpus, index and weights on ext4 |
+| Company endpoint lacks embeddings or vision support | Open questions in §5.3.4; fallbacks defined — CPU embeddings, and P4 reported as an open failure mode if unavailable |
+| Company model host unreachable during the talk | Internal-network dependency remains; rehearse on the demo host, prebuild the index, keep a recorded fallback |
 | Model differs between learning and demo | Same family (Qwen3.6) both sides, so prompts and failure modes transfer |
 | **Corpus rendering is the long pole** — authoring plus six output formats | Render script is scoped first in M1; formats can be cut to markdown + DOCX + scanned PDF and still exercise every parsing trap |
 | OCR on scanned pages is slow and CPU-bound | Ingest is offline; index is prebuilt and committed for the demo |
