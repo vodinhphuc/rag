@@ -43,7 +43,18 @@
   rule** (latency figures must come from the demo host), and two open questions
   about the company endpoint's capabilities.
 
-**Status:** Approved (design); failure catalog at v2.1 (see §10.11)
+- **v2.2** (2026-08-02) — **company model catalogue known** (§5.3.4): hosted
+  embeddings (`embedding-qwen3-4b`), a hosted reranker (`qwen3-rerank-0.6B`), a
+  vision-capable generation model (`qwen36_a3b`), plus `qwen36_27B`,
+  `qwen35_a3b` and the reasoning model `gpt-oss-120b`. Both v2.1 open questions
+  are answered. **Corrects v2.1's claim** that CPU reranking made H3 near-certain
+  — the reranker is GPU-hosted at ~250 ms, so the L7 experiment is open again.
+  Demo-host serving drops to ~2.5 GB since every model call is now remote. L2
+  standardises on the hosted embedder (it defines the index); L6 becomes a real
+  Qwen3-Embedding-4B vs BGE-M3 head-to-head; H5 added for instruction-aware
+  relevance.
+
+**Status:** Approved (design); failure catalog at v2.2 (see §10.11)
 **Author:** phucvd
 
 ---
@@ -187,7 +198,7 @@ pdf │ docx │ xlsx │ scan │ png               Flowise (no-code)          
   chunks + provenance ──────────────────>    L5 vocab   │ L6 embed↑ │ L7 rerank
   (page, bbox, type, service, date)          L8 verdict + severity gate
      │                                                   │
-     └──────────> Qdrant + BGE-M3 (VI/EN) <──────────────┘
+     └──────> Qdrant + Qwen3-Embedding-4B (VI/EN) <──────┘
 ```
 
 **Key design decision — the service implements two standard contracts:**
@@ -215,11 +226,11 @@ hold where it matters.
 | | **Learning (home)** | **Demo (company)** |
 |---|---|---|
 | Hardware | RTX 3090, **24 GB VRAM** | **No GPU.** WSL2, 8 GB RAM |
-| Generation | Local Qwen3.6 on GPU | **Company self-hosted Qwen 3.6, over the internal network** |
-| Embeddings | BGE-M3 on GPU | BGE-M3 on **CPU** — or the company endpoint, if it serves embeddings (§5.3.4) |
-| Reranker (L7) | GPU, ~100 ms | **CPU, ~seconds** |
-| P4 captioning | Local vision model on GPU | Company endpoint, only if vision-capable (§5.3.4) |
-| Parsing, OCR | CPU | CPU |
+| Generation | Local Qwen3.6 on GPU | `qwen36_a3b` on the company model host |
+| Embeddings | Qwen3-Embedding-4B on GPU | `embedding-qwen3-4b` — **hosted, not local** |
+| Reranker (L7) | Local, on GPU | `qwen3-rerank-0.6B` — **hosted, ~250 ms** |
+| P4 captioning | Local vision model | `qwen36_a3b` — vision-capable ✓ |
+| Parsing, OCR | CPU | CPU — the only real local work |
 | Data boundary | Synthetic corpus only | Real corpus; nothing leaves the company network |
 
 Nothing reaches a third party in either environment: at home everything is on
@@ -242,10 +253,21 @@ Ingest and serving **never run concurrently**, which is what makes 24 GB enough.
 | Serving (online) | VRAM |
 |---|---|
 | Qwen3.6-27B, 4-bit | ~15–16 GB |
-| BGE-M3 embeddings | ~2.2 GB |
-| BGE-reranker-v2-m3 (only at rung L7) | ~2.2 GB |
+| Qwen3-Embedding-4B (matches the demo index) | ~4 GB at 8-bit |
+| Reranker (only at rung L7) | ~1–2 GB |
 | KV cache | remainder |
-| **Total** | **~20 GB + KV** |
+| **Total** | **~21 GB + KV — tight in 24 GB** |
+
+Standardising on Qwen3-Embedding-4B (needed so the home index matches the demo,
+§5.3.4) costs more VRAM than BGE-M3 would have. Three ways to buy headroom, in
+order of preference:
+
+1. **Run the query embedder on CPU at home.** At serving time only *one short
+   question* is embedded per request; the corpus was embedded during ingest.
+   This frees ~4 GB and costs milliseconds.
+2. **Load the reranker only while running L7 experiments** — it is off by default.
+3. **Cap context hard.** 8k is ample for RAG; the KV cache is what actually
+   overflows the card.
 
 **Cap the context window.** Qwen3.6 defaults to 262k tokens and extends to ~1M;
 at that size the KV cache alone would exhaust the card. RAG needs 8–32k. Setting
@@ -261,13 +283,16 @@ captioning fast despite the size.
 This is the environment the seminar actually runs on, so these are the numbers
 that must hold.
 
+Because generation, embedding **and** reranking are all hosted (§5.3.4), the demo
+host runs almost nothing. Every model call is HTTP.
+
 | Serving | RAM |
 |---|---|
-| Retrieval service + BGE-M3 **on CPU** | ~2.5 GB |
+| Retrieval service (thin — all models remote) | ~0.5 GB |
 | Qdrant | ~0.5 GB |
 | Open WebUI | ~0.5 GB |
 | Flowise | ~1.0 GB |
-| **Total** | **~4.5 GB** of 8 GB |
+| **Total** | **~2.5 GB** of 8 GB |
 
 | Ingest (offline, one-off) | RAM |
 |---|---|
@@ -276,16 +301,21 @@ that must hold.
 | Qdrant (writing) | ~0.5 GB |
 | **Peak** | **~3.5 GB** |
 
-Generation costs this machine **nothing** — it is an HTTP call to the company's
-model host. That is what makes a GPU-less demo box viable at all.
+Parsing and OCR are the only genuinely local work, and both are offline. The
+GPU-less demo host is therefore **comfortable**, not constrained.
 
-**CPU changes the reranker economics decisively.** A cross-encoder that costs
-~100 ms on the 3090 costs **seconds** on this host, because it scores every
-candidate at query time and nothing can be precomputed. The spec already places
-L7 last and expects it to fail (§9.4); running the demo on CPU makes that
-conclusion sharper, not weaker. Hypothesis H3 — that an embedding upgrade beats a
-reranker at lower query-time cost — is now very likely to hold, and the audience
-will see the latency difference rather than take it on faith.
+**Correction to v2.1.** That revision argued CPU reranking would cost seconds and
+so H3 (embedding upgrade beats reranker) was near-certain. That reasoning assumed
+the reranker ran locally. It does not — `qwen3-rerank-0.6B` is hosted on the
+company's GPU host at roughly **250 ms**, comparable to BGE-reranker-v2-m3's
+~241 ms. **The reranker experiment is genuinely open again**, which is the better
+outcome: the seminar shows a real measurement rather than a foregone conclusion.
+
+The general lesson survives and stays in the catalog as F8.12 — a cross-encoder
+scores at query time and nothing precomputes, so on CPU-only hardware it *is*
+prohibitive. It simply does not bind here, because someone else's GPU absorbs it.
+Colleagues without a hosted reranker face the CPU version of this problem, and
+should be told so.
 
 #### 5.3.3 One codebase, two configs
 
@@ -306,19 +336,55 @@ scores) are hardware-independent and may be produced at home. Every result in th
 audience who will run on CPU would be the same failure this project exists to
 warn about.
 
-#### 5.3.4 Two open questions about the company endpoint
+#### 5.3.4 The company model catalogue, and what each is for
 
-Both change the design and neither is knowable from here:
+Both v2.1 open questions are answered: the host serves embeddings **and** a
+reranker, and one generation model is vision-capable. Nothing in the pipeline
+needs a component the company does not already run.
 
-1. **Does it serve an embeddings API?** If yes, embeddings move off the demo
-   host's CPU and both latency and RAM improve materially. If no, BGE-M3 runs on
-   CPU — workable, since query-time embedding of a single short question is
-   modest, and ingest is offline.
-2. **Is it vision-capable?** P4 captioning of **real** EDR diagrams can only
-   happen on company hardware, since those images cannot leave the network. If
-   the endpoint has no vision support, P4 is demonstrated on the SENTRIQ corpus
-   only, and figure-answers in the real corpus stay unreachable — which should
-   then be reported as an open failure mode rather than quietly omitted.
+| Hosted model | Specification | Used for |
+|---|---|---|
+| `embedding-qwen3-4b` | Qwen3-Embedding-4B; 32K context; 2560 dims, selectable 32–2560; MTEB-multilingual 69.45; 100+ languages; **instruction-aware** | **L2 dense retrieval** — and it defines the index |
+| `qwen3-rerank-0.6B` | Qwen3-Reranker-0.6B; ~247 ms avg; **instruction-following relevance** | **L7 reranking** |
+| `qwen36_a3b` | Qwen3.6-35B-A3B; MoE, 3B active; **vision-capable** | **Default generation + P4 captioning** |
+| `qwen36_27B` | Qwen3.6-27B dense | Quality comparison arm |
+| `gpt-oss-120b` | 117B total / 5.1B active; 128 experts, top-4; 130K context; **reasoning model, adjustable effort** | **The hard slice** — hypothesis ranking (§7.4) |
+| `qwen35_a3b` | Previous generation | Baseline for "does a newer model help?" |
+
+**`qwen36_a3b` is the default** because it is fast (3B active per token) and
+vision-capable, so one model covers both generation and figure captioning. NOC
+work is latency-sensitive; a 3 a.m. answer that takes 40 seconds is not used.
+
+**The embedding model defines the index.** Whatever embeds the corpus must also
+embed the query, so the *demo's* embedder decides what gets built — this is
+catalog entry F3.5. The learning host therefore uses Qwen3-Embedding-4B too,
+even though BGE-M3 would run more comfortably in 24 GB alongside a 27B model.
+
+**L6 becomes a real head-to-head rather than a hypothetical.** Both candidates
+are available and both are strongly multilingual: Qwen3-Embedding-4B (2560 dims,
+instruction-aware, MTEB-multi 69.45) against BGE-M3 (0.6B, and the pioneer of
+unified dense + sparse + multi-vector). The result decides which index ships.
+
+One genuine architectural difference to weigh, not just a score: **BGE-M3 emits
+sparse lexical vectors natively**, so a single model covers both arms of hybrid
+search (L3). Qwen3-Embedding is dense-only, so the sparse arm needs a separate
+BM25 with Vietnamese segmentation — which this design already builds at L1, so
+the cost is already paid. Worth naming on the slide: convenience is a real
+selection criterion, separate from quality.
+
+**Two cheap experiments the catalogue makes possible**, both a config change with
+the harness already built:
+
+1. **Does a reasoning model improve the hard slice?** `gpt-oss-120b` with
+   adjustable reasoning effort against `qwen36_a3b` on the hard/novel question
+   category, scored on context-packet precision. Reasoning tokens cost latency,
+   so this is a genuine trade rather than a free upgrade.
+2. **Do embedding instructions help?** Qwen3-Embedding accepts a task
+   instruction, reportedly worth 1–5%. Telling the embedder that relevance means
+   *"a procedure resolving this symptom"* is nearly free. The same applies to
+   `qwen3-rerank-0.6B`, whose instruction-following is its main differentiator
+   from BGE — for triage, "relevance = describes a resolution for this symptom"
+   is a materially different question from generic topical similarity.
 
 #### 5.3.5 WSL2 setup failures to expect
 
@@ -813,12 +879,12 @@ revision, puts the cross-encoder reranker **last** rather than fourth.
 |---|---|---|---|
 | **L0** | Nothing new — measure the *incumbent* (§9.3) | (baseline) | none |
 | **L1** | BM25 + Vietnamese word segmentation | L0 fails on paraphrase | trivial |
-| **L2** | Dense embeddings (BGE-M3) | L1 fails on semantic / cross-lingual | index build |
-| **L3** | Hybrid, RRF fusion | L2 fails on error codes and identifiers | negligible at query time |
+| **L2** | Dense embeddings (**Qwen3-Embedding-4B**, hosted — defines the index) | L1 fails on semantic / cross-lingual | index build |
+| **L3** | Hybrid, RRF fusion (L1's BM25 supplies the sparse arm) | L2 fails on error codes and identifiers | negligible at query time |
 | **L4** | **Structure-first**: question parsing + classify-before-retrieve + metadata pre-filter | Wrong-service, stale, negation or listing questions fail | deterministic, ~free |
 | **L5** | **Domain vocabulary map** (acronyms, VI↔EN term pairs) | Internal jargon still misses | human curation, no runtime cost |
-| **L6** | **Embedding upgrade** — evaluate a stronger or different embedder | Semantic recall still short | reindex; no added latency |
-| **L7** | Cross-encoder reranker — **expected to fail** (§9.4) | Signal dilution persists after L0–L6 | +100s of ms **per query** |
+| **L6** | **Embedding head-to-head** — Qwen3-Embedding-4B vs BGE-M3, plus task instructions | Semantic recall still short | reindex; no added latency |
+| **L7** | Cross-encoder reranker (**`qwen3-rerank-0.6B`**, hosted) — see §9.4 | Signal dilution persists after L0–L6 | ~250 ms **per query** |
 | **L8** | Verdict logic + severity gate + **context packet** (§7.4) | Retrieval is good but calls still arrive | logic only |
 
 Three rungs — L4, L5, L6 — sit between hybrid search and reranking, and all
@@ -868,8 +934,19 @@ result cannot be rationalized afterwards:
 |---|---|---|
 | H1 | L7 improves only the **signal-dilution** category | It improves others materially |
 | H2 | L7 regresses at least one category | No category regresses |
-| H3 | L6 (embedding upgrade) beats L7 at lower query-time cost | L7 wins on more cells than L6 |
+| H3 | L6 (embedding change) beats L7 at lower query-time cost | L7 wins on more cells than L6 |
 | H4 | L4 (structure-first) delivers a larger gain than L6 and L7 combined | Either exceeds it |
+| H5 | Instruction-tuned relevance ("a procedure resolving this symptom") beats generic topical relevance at both L2 and L7 | No measurable difference |
+
+**H3 revised in v2.2.** v2.1 argued H3 was near-certain because reranking would
+run on the demo host's CPU. It does not — the reranker is hosted on GPU at
+~250 ms (§5.3.2). H3 returns to being a real question, and the honest framing for
+the seminar is *"we do not know yet; here is the measurement"* rather than a
+prediction dressed as a finding.
+
+**H5 is new** and cheap. Both Qwen3 retrieval models accept instructions, which
+generic embedders do not. Being able to *tell* the retriever what relevance means
+in this domain is a capability worth testing rather than assuming.
 
 Writing the hypotheses down first is the point. The most likely honest outcome
 of this project is **"we tested the reranker, and the architecture mattered
@@ -1031,8 +1108,11 @@ rather than loud. Nothing downstream can repair a fact lost here.
 | F8.9 | Prompts tuned on one model, deployed on another | No model parity between learning and production | Develop against the model you will serve |
 | F8.10 | "It's local, so it's private" | Self-hosted inference still writes prompt logs | Check retention on the serving stack (§6.5) |
 | F8.11 | **Benchmarks from the dev machine collapse in production** | Measured on a GPU workstation, deployed to CPU hosts | Measure latency where it will run (§5.3.3) |
-| F8.12 | Reranker acceptable in testing, unusable live | Cross-encoder scoring cannot be precomputed; CPU cost is seconds, not milliseconds | Treat reranking as a per-query cost on the *target* hardware |
-| F8.13 | Component assumed available on the shared model host | Endpoint serves chat but not embeddings or vision | Verify the endpoint's actual capabilities before designing around them (§5.3.4) |
+| F8.12 | Reranker acceptable in testing, unusable live | Cross-encoder scoring cannot be precomputed; on CPU-only hardware the cost is seconds, not milliseconds | Treat reranking as a per-query cost on the *target* hardware. (Does not bind here — the reranker is GPU-hosted, §5.3.2) |
+| F8.13 | Component assumed available on the shared model host | Endpoint serves chat but not embeddings, reranking or vision | Enumerate the model catalogue before designing around it (§5.3.4) |
+| F8.14 | Index built with one embedder, queried with another | Embedding model changed without a rebuild; the *serving* model defines the index | Pin the embedder; rebuild on change (see F3.5) |
+| F8.15 | Generation model chosen by size, not by task | Largest model assumed best; latency and reasoning-token cost ignored | Match model to slice — fast MoE for triage, reasoning model for hypothesis ranking |
+| F8.16 | Retriever left on generic topical relevance | Instruction-aware embedder or reranker deployed without an instruction | State what relevance means for the domain (§9.4 H5) |
 
 F8.5 closes the loop on the opening story and is the final slide.
 
@@ -1085,11 +1165,13 @@ F4.13, F6.6. **98 entries.** Output artifact: `docs/concepts/fundamentals.md`.
 - ✅ Retrieval security: prompt injection, exfiltration (§10.10)
 - ✅ Adaptive retrieval — Self-RAG, CRAG, FLARE (F0.13)
 
-**v1.9 → v2.1 (2026-08-02).** Local-inference infrastructure added 8 entries,
-F8.6–F8.13 — VRAM sizing, broken CUDA passthrough, `/mnt/c/` slowness, model
-parity, "local ≠ unlogged", and the v2.1 additions: benchmarks measured on the
-wrong hardware, reranking that is affordable on GPU and unusable on CPU, and
-capabilities assumed of a shared model endpoint. **106 entries.**
+**v1.9 → v2.2 (2026-08-02).** Local-inference and hosted-model infrastructure
+added 11 entries, F8.6–F8.16 — VRAM sizing, broken CUDA passthrough, `/mnt/c/`
+slowness, model parity, "local ≠ unlogged", benchmarks measured on the wrong
+hardware, CPU reranking, capabilities assumed of a shared endpoint, and the v2.2
+additions: an index built with one embedder and queried with another, a
+generation model chosen by size rather than task, and an instruction-aware
+retriever left on generic relevance. **109 entries.**
 
 **Remaining research:**
 
