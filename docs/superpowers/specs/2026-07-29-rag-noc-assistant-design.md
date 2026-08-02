@@ -32,7 +32,15 @@
   addresses F0.4 — and §6.5 data-boundary rules. **This repository is public**;
   a pre-commit guard now enforces the boundary.
 
-**Status:** Approved (design); failure catalog at v1.8 (see §10.11)
+- **v2.0** (2026-08-02) — **fully local inference, both environments.** The demo
+  runs on the company's self-hosted Qwen 3.6; the learning host has an RTX 3090
+  (24 GB). §5.3 rewritten as a VRAM budget with a WSL2/CUDA setup list. Cloud
+  APIs are gone, so §6.5's retrieval-only compromise is retired and the real
+  corpus gets a full end-to-end demo. Qwen3.6-35B-A3B is vision-capable, so P4
+  captioning drops its separate VLM. Visual retrieval's non-goal justification
+  corrected — no longer a capability limit, only scope (§3).
+
+**Status:** Approved (design); failure catalog at v2.0 (see §10.11)
 **Author:** phucvd
 
 ---
@@ -114,10 +122,14 @@ tool loses credibility on its first wrong root-cause call.
 - An autonomous root-cause agent that concludes rather than recommends.
 - Using real company documents. The corpus is authored (§6).
 - **Visual retrieval** — page-as-image (ColPali, ColQwen2) or unified multimodal
-  embeddings (Cohere Embed 4, voyage-multimodal-3). Both need GPU and
-  multi-vector indexing this host lacks. Figures are handled by OCR-aware
-  captioning instead (§9.1 P4); visual retrieval is named as tier 5 of the
-  decision matrix so colleagues know the graduation path exists.
+  embeddings. **Note the reason changed in v2.0:** this was excluded because the
+  host lacked a GPU. It now has a 24 GB one, so the capability constraint is
+  gone; the exclusion now rests on *scope and time* alone. Figures are handled by
+  OCR-aware captioning (§9.1 P4), which the spec argues captures most of the
+  value for diagrams whose meaning is largely the text inside them. Visual
+  retrieval remains tier 5 of the decision matrix and is now a **realistic
+  stretch goal** rather than an impossibility — worth saying plainly instead of
+  leaving a stale justification in place.
 - Handwriting recognition. Out of scope for operational documents.
 
 ## 4. Audience and success criteria
@@ -167,7 +179,7 @@ pdf │ docx │ xlsx │ scan │ png               Flowise (no-code)          
      │  P1 layout-aware   ──> Docling             retrieval service (~200 LOC)
      │  P2 tables (TableFormer)                           │  strategy swapped live
      │  P3 OCR                                            │
-     │  P4 VLM captions ──> cloud            L0 keyword │ L1 bm25 │ L2 dense
+     │  P4 VLM captions ──> local GPU        L0 keyword │ L1 bm25 │ L2 dense
      ▼                                       L3 hybrid  │ L4 structure-first
   chunks + provenance ──────────────────>    L5 vocab   │ L6 embed↑ │ L7 rerank
   (page, bbox, type, service, date)          L8 verdict + severity gate
@@ -191,40 +203,89 @@ A third contract, `POST /retrieval` (Dify's External Knowledge API shape), is
 implemented as a thin alias so the tier-1 platform path can be demonstrated
 without installing Dify.
 
-### 5.3 Component budget (target host: WSL2, 8 GB)
+### 5.3 Component budget — fully local, both environments
 
-Ingest and serving **never run concurrently**, so they are budgeted separately.
+v2.0 replaces the cloud-API design. Both environments now self-host generation,
+so **nothing leaves the machine at any stage**.
 
-| Serving (online) | RAM |
+| | Learning (home) | Demo (company) |
+|---|---|---|
+| GPU | RTX 3090, **24 GB VRAM** | company GPU host |
+| System RAM | 16 GB, ~8 GB to WSL2 | — |
+| Generation model | Qwen3.6 (local) | **Qwen 3.6, company self-hosted** |
+
+**Model parity is deliberate.** Learning on the same model family that serves the
+demo means prompt behaviour, citation formatting, refusal patterns and failure
+modes transfer directly. A prompt tuned against a different model is a prompt
+tuned twice.
+
+#### VRAM — the budget that now matters
+
+Ingest and serving **never run concurrently**, which is what makes 24 GB enough.
+
+| Ingest (offline, one-off) | VRAM |
 |---|---|
-| Retrieval service + BGE-M3 embeddings | ~2.5 GB |
+| Qwen3.6-35B-A3B — vision-capable, for P4 captioning | ~22 GB |
+| *(loaded alone; unloaded before serving)* | |
+
+| Serving (online) | VRAM |
+|---|---|
+| Qwen3.6-27B, 4-bit | ~15–16 GB |
+| BGE-M3 embeddings | ~2.2 GB |
+| BGE-reranker-v2-m3 (only at rung L7) | ~2.2 GB |
+| KV cache | remainder |
+| **Total** | **~20 GB + KV** |
+
+**Cap the context window.** Qwen3.6 defaults to 262k tokens and extends to ~1M;
+at that size the KV cache alone would exhaust the card. RAG needs 8–32k. Setting
+this explicitly is the difference between a working rig and an out-of-memory
+error, and it is a lesson worth showing on stage.
+
+The 35B-A3B being **vision-capable** removes a whole component: P4 captioning no
+longer needs a separate VLM, and no document image leaves the machine. Its MoE
+design (35B total, 3B active) also keeps captioning fast despite the size.
+
+#### System RAM — no longer the binding constraint
+
+With models on the GPU, the WSL2 budget relaxes considerably.
+
+| Serving | RAM |
+|---|---|
+| Retrieval service (thin; models are on GPU) | ~0.5 GB |
 | Qdrant | ~0.5 GB |
 | Open WebUI | ~0.5 GB |
 | Flowise | ~1.0 GB |
-| **Total** | **~4.5 GB** |
+| **Total** | **~2.5 GB** of ~8 GB |
 
-| Ingest (offline, one-off) | RAM |
+Docling and OCR at ingest remain CPU/RAM work (~3 GB peak), still comfortable.
+
+#### WSL2 + CUDA — the setup failures to expect
+
+These are the ones that actually cost hours, and colleagues attempting this will
+hit exactly the same list:
+
+1. **Never install an NVIDIA Linux driver inside WSL2.** The Windows driver is
+   stubbed in as `libcuda.so`; installing the `cuda` meta-package overwrites the
+   stub and breaks GPU access entirely. This is the single most common failure.
+2. Windows host driver must be recent (≥ 525.60.11 for CUDA 12).
+3. Docker GPU passthrough needs `nvidia-container-toolkit` **inside** the WSL2
+   distro, plus `"default-runtime": "nvidia"` in `/etc/docker/daemon.json`.
+4. **Keep models and corpus off `/mnt/c/`.** Windows drives go through 9P and run
+   3–5× slower. Model weights and the document corpus belong on ext4 inside the
+   WSL2 filesystem.
+
+With those right, WSL2 delivers 90–100% of native inference performance — the
+bottleneck is GPU memory bandwidth, not the OS layer.
+
+#### What this changes elsewhere
+
+| Was | Now |
 |---|---|
-| Docling layout + TableFormer models | ~2.0 GB |
-| OCR engine (Tesseract / EasyOCR) | ~1.0 GB |
-| Qdrant (writing) | ~0.5 GB |
-| **Peak** | **~3.5 GB** |
-
-Parsing being offline is what makes it affordable on this host: the expensive
-models load, process the corpus, and exit before anything is served. **VLM
-captioning (P4) uses the cloud API** rather than a local vision model, for the
-same reason generation does — no serving RAM, and it runs once per image.
-
-The **generation LLM is a cloud API**, not local — there is no RAM for Ollama
-on this host. Embeddings remain local, which preserves the "documents never
-leave the machine" property where it actually matters. This constraint is
-itself presented as a teaching point: it is the realistic constraint most
-colleagues face.
-
-One honest caveat for the talk: P4 captioning sends **document images** to a
-cloud VLM. That is a genuine data-boundary decision, not a detail — with real
-company diagrams it needs approval, or a local VLM on a host with more RAM. The
-constraint is named on the slide rather than buried.
+| Generation via cloud API | Local Qwen3.6, both environments |
+| P4 captioning via cloud VLM | Local, vision-capable Qwen3.6-35B-A3B |
+| "Retrieval-only demo on real corpus" (§6.5) | Unnecessary — full end-to-end on real docs |
+| Cost per query measured in API spend | Measured in **latency and GPU capacity**; no marginal token cost |
+| Network dependency during the talk | **Removed** — a significant risk retired |
 
 **Rejected:** RAGFlow (16 GB minimum, x86_64 only — exceeds the host) and Dify
 (4–8 GB, 6–8 containers — heavy for the value it adds here). Both appear in the
@@ -433,26 +494,31 @@ Binding, because this repository is public and the material is security-sensitiv
 | Screenshots for slides are recreated on the generated corpus | Demo recordings and screenshots are the most common accidental leak |
 | **Retrieval is local; generation is not** | See below |
 
-**The cloud-generation problem.** The serving design (§5.3) sends prompts to a
-cloud LLM, and P4 sends document images to a cloud VLM. Against the real corpus
-that means proprietary security documentation leaving the company. Three options,
-in preference order:
+**The cloud-generation problem is resolved (v2.0).** The company self-hosts
+Qwen 3.6, and the learning host has a 24 GB GPU (§5.3). Every stage —
+parsing, captioning, embedding, retrieval, reranking and generation — now runs
+on hardware the company or the author controls. **No document, image or prompt
+leaves either machine.**
 
-1. **Retrieval-only demo on the real corpus.** Embeddings (BGE-M3) and the vector
-   store are entirely local, so retrieval never leaves the machine. Show the
-   ranked chunks, citations and the verdict — with **no generated prose**. For
-   deflection this is most of the value already: "here are the three relevant
-   playbook sections and the matching past incident" *is* the answer. It needs no
-   approval and demonstrates the retrieval half honestly.
-2. **Get explicit approval** for a specific model and endpoint, with the retention
-   policy checked. Run this in parallel; it takes longer than the project does.
-3. Local generation model — does not fit this host's budget (§5.3), so it would
-   require different hardware.
+This retires the v1.9 compromise: the real corpus gets a **full end-to-end
+demo**, not retrieval-only. It also removes the awkward asymmetry where the
+generated corpus would have shown more capability than the real one.
 
-**Default: option 1 for the real corpus, cloud generation for the generated
-corpus only.** The seminar then shows full end-to-end behaviour on SENTRIQ and
-grounded retrieval on the real docs — and the reason for the difference is itself
-a lesson colleagues need, since they will face exactly this constraint.
+Two obligations survive, and both should be stated on the slide rather than
+assumed:
+
+1. **Local ≠ unlogged.** A self-hosted model still writes prompts to inference
+   logs. Retrieved EDR content in those logs is the same sensitivity as the
+   documents. Check retention on the company's serving stack.
+2. **Local ≠ unauthorised.** Indexing real operations documentation into a new
+   system is still a change in how that material is accessed and who can reach
+   it. §10.10 F9.6 applies: the index must not become a way around document
+   permissions.
+
+The remaining boundary rules — private paths, the pre-commit guard, no derived
+artifacts, no real screenshots in slides — are unchanged and still binding,
+because they protect against **publication**, which is a separate risk from
+transmission.
 
 ## 7. The product: a triage verdict, not prose
 
@@ -649,7 +715,7 @@ silently.
 | **P1** | Layout-aware parsing — reading order, heading hierarchy, typed elements | P0 scrambles multi-column order or drops headings | CPU, one-off |
 | **P2** | Table structure extraction to markdown/relational form | Table answers unretrievable | CPU, one-off |
 | **P3** | OCR for scanned pages | Scanned documents yield empty text | CPU, one-off, slow |
-| **P4** | VLM **caption-and-index** for diagrams and screenshots, OCR-aware | Answers live in figures | one cloud call per image, one-off |
+| **P4** | VLM **caption-and-index** for diagrams and screenshots, OCR-aware | Answers live in figures | local GPU pass per image, one-off |
 
 **Tooling: Docling** as the primary parser for P1–P3. It handles PDF, DOCX,
 PPTX, XLSX and HTML natively, uses TableFormer for table structure, integrates
@@ -665,7 +731,11 @@ OCR-aware description of each figure; the caption is indexed as text and the
 image is returned as the citation. Evidence is that stronger captioners improve
 recall even with the retrieval model unchanged. Chosen over the alternatives
 because captions become ordinary text — the existing pipeline, gold set and
-metrics all work unmodified, and it adds **zero serving RAM**.
+metrics all work unmodified, and it costs **nothing at serving time**.
+
+Since v2.0 the captioner is **Qwen3.6-35B-A3B running locally** (§5.3): the same
+model family that serves generation is vision-capable, so P4 needs no separate
+component and no image leaves the machine.
 
 Deliberately **not** doing: unified vision embeddings (Cohere Embed 4,
 voyage-multimodal-3) and page-as-image retrieval (ColPali, ColQwen2). Both need
@@ -894,6 +964,11 @@ rather than loud. Nothing downstream can repair a fact lost here.
 | F8.3 | Quality silently decays | Evaluated once at launch | Regression eval in CI |
 | F8.4 | Knowledge base rots | No owner | Assign ownership |
 | F8.5 | **The bot becomes another "too complicated" tool** | Same failure as the original KB | Usability is the requirement, not the feature count |
+| F8.6 | Out-of-memory only under real load | KV cache sized for the model's default context, not the workload | Cap max context; measure VRAM at realistic concurrency |
+| F8.7 | GPU silently unused; everything runs on CPU | Broken CUDA passthrough — often a Linux NVIDIA driver installed inside WSL2 | Verify device visibility before blaming the model |
+| F8.8 | Ingest inexplicably slow | Corpus or weights on `/mnt/c/`, served over 9P at 3–5× penalty | Keep both on ext4 |
+| F8.9 | Prompts tuned on one model, deployed on another | No model parity between learning and production | Develop against the model you will serve |
+| F8.10 | "It's local, so it's private" | Self-hosted inference still writes prompt logs | Check retention on the serving stack (§6.5) |
 
 F8.5 closes the loop on the opening story and is the final slide.
 
@@ -946,7 +1021,11 @@ F4.13, F6.6. **98 entries.** Output artifact: `docs/concepts/fundamentals.md`.
 - ✅ Retrieval security: prompt injection, exfiltration (§10.10)
 - ✅ Adaptive retrieval — Self-RAG, CRAG, FLARE (F0.13)
 
-**Remaining for v2:**
+**v1.9 → v2.0 (2026-08-02).** Local-GPU infrastructure added 5 entries,
+F8.6–F8.10 — VRAM sizing, broken CUDA passthrough, `/mnt/c/` slowness, model
+parity, and "local ≠ unlogged". **103 entries.**
+
+**Remaining research:**
 
 - Late-interaction retrieval (ColBERT) and multi-vector indexing
 - Evaluation frameworks and their known weaknesses (RAGAS and similar)
@@ -1148,15 +1227,18 @@ rag/
 
 | Risk | Mitigation |
 |---|---|
-| 8 GB WSL2 host | Cloud LLM, local embeddings; ~4.5 GB serving, ~3.5 GB ingest, never concurrent (§5.3) |
+| **VRAM exhaustion** — 24 GB is enough only if managed | Cap context to 8–32k (KV cache dominates otherwise); ingest and serving never concurrent; reranker loaded only at L7 (§5.3) |
+| **WSL2 CUDA setup** | Documented failure list in §5.3; never install a Linux NVIDIA driver in WSL2; keep models and corpus off `/mnt/c/` |
+| System RAM (8 GB WSL2) | No longer binding — models are on GPU; ~2.5 GB of containers (§5.3) |
+| Model differs between learning and demo | Same family (Qwen3.6) both sides, so prompts and failure modes transfer |
 | **Corpus rendering is the long pole** — authoring plus six output formats | Render script is scoped first in M1; formats can be cut to markdown + DOCX + scanned PDF and still exercise every parsing trap |
 | OCR on scanned pages is slow and CPU-bound | Ingest is offline; index is prebuilt and committed for the demo |
 | Docling model download is large | Pinned versions, cached in the image, verified before the talk |
-| P4 sends document images to a cloud VLM | Named explicitly as a data-boundary decision (§5.3), not hidden |
+| ~~P4 sends document images to a cloud VLM~~ | **Retired in v2.0** — captioning runs on the local vision-capable Qwen3.6 |
 | Live demo failure | Pre-warmed containers, pre-computed index, recorded fallback |
 | Authored corpus feels artificial | Traps modelled on real escalation patterns; state the limitation openly |
 | LLM judge unreliable | Human-scored subset (§8.3) |
-| Cloud LLM needs network during the talk | Cache demo responses; keep a local fallback answer path |
+| ~~Cloud LLM needs network during the talk~~ | **Retired in v2.0** — generation is local on both sides; the demo works with the network unplugged |
 | 2 hours is not much time | Run-of-show is timed; demo is rehearsed end to end |
 
 ## 15. Milestones
