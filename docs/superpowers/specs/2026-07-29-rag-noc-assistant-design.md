@@ -17,7 +17,14 @@
   *demonstration* while code indexing stays a non-goal (§5.5), and a question-
   shape decision guide plus retrieval-vs-memory distinction (§11.1, §11.2).
 
-**Status:** Approved (design); failure catalog at v1.7 (see §10.10)
+- **v1.8** (2026-08-02) — **M0 research pass, partial.** Produced
+  `docs/concepts/fundamentals.md`: why RAG versus fine-tuning, long context and
+  agentic search; the ingest/query stages and where each fails; and the evolution
+  of RAG taught as a **chain of failures** rather than a timeline. Added a
+  security group to the catalog (§10.10) — retrieval is an untrusted input
+  channel, which v1.7 omitted entirely — plus 8 further entries.
+
+**Status:** Approved (design); failure catalog at v1.8 (see §10.11)
 **Author:** phucvd
 
 ---
@@ -665,6 +672,10 @@ Below is v1, grouped by pipeline stage.
 | F0.7 | Headline score improves, users complain more | Aggregate metric hid a per-category regression | Per-failure-mode matrix (§8.4) |
 | F0.8 | Effort spent on ranking while structure is ignored | Semantics assumed harder than filtering | "classify before retrieve", structure-first |
 | F0.9 | Expert knowledge left in people's heads | System designed to replace experts, not amplify them | Vocabulary maps, curated routing rules |
+| F0.10 | Newest architecture adopted; the failure persists | Gen 4 machinery applied to a Gen 1 problem | Identify which generation fixes *your* failure (fundamentals §3) |
+| F0.11 | RAG added; output still has the wrong tone or format | Behaviour problem treated as a knowledge problem | Fine-tuning changes behaviour; RAG changes knowledge |
+| F0.12 | GraphRAG's preprocessing cost paid for single-hop questions | Multi-hop machinery on non-multi-hop traffic | +27.23 on multi-hop vs +0.47 on general QA — check your question mix |
+| F0.13 | Retrieval runs on every query, including ones needing none | No adaptive gating | Self-RAG / CRAG / deterministic routing (L4) |
 
 ### 10.2 Ingestion and parsing
 
@@ -703,6 +714,7 @@ rather than loud. Nothing downstream can repair a fact lost here.
 | F2.4 | Chunk says "set it to 30" with no antecedent | Heading hierarchy dropped | Prepend heading path to chunk |
 | F2.5 | Table split across chunks | Chunker unaware of table boundaries | Table-aware chunking |
 | F2.6 | Answer sentence present in the chunk but ranked below topical distractors | **Signal dilution** in a long chunk | Smaller chunks, or the one justified reranker case (§9.4) |
+| F2.7 | Chunk retrieved but meaningless alone — "set it to 30", "revenue grew 3%" | Chunk severed from its document context | **Contextual retrieval** — prepend chunk-specific context before embedding (35–49% fewer failures) |
 
 ### 10.4 Embedding
 
@@ -733,6 +745,8 @@ rather than loud. Nothing downstream can repair a fact lost here.
 | F4.9 | "How many incidents last quarter" answered with one anecdote | Listing/counting sent through retrieval | Structured query, SQL agent |
 | F4.10 | Correct doc buried among 200k plausible ones | Semantic search run over the whole corpus | Classify-before-retrieve, then search the slice |
 | F4.11 | Every rung fails this one question shape | Persistent blind spot, not a tuning problem | Report as an open failure mode (§8.4) |
+| F4.12 | Question needing two linked facts returns one | Single-shot retrieval cannot chain | Multi-hop: iterative retrieval, or GraphRAG if the traffic justifies it |
+| F4.13 | Query rewriting drops the exact error code | Transform stage smoothed away the literal token | Preserve identifiers through rewriting; keep the raw query in the hybrid arm |
 
 ### 10.6 Reranking
 
@@ -755,6 +769,7 @@ rather than loud. Nothing downstream can repair a fact lost here.
 | F6.3 | Two services' procedures merged | Chunks from different sources blended | Source-scoped synthesis |
 | F6.4 | Confident tone on weak evidence | No confidence signalling | Calibrated hedging; expose scores |
 | F6.5 | Stale playbook followed without warning | Document age not surfaced | Surface recency in the answer |
+| F6.6 | Answer ignores a document that was retrieved | Too much context; the fact sat in the middle | "Lost in the middle"; fewer, better chunks |
 
 ### 10.8 Deflection (specific to this system)
 
@@ -786,7 +801,25 @@ rather than loud. Nothing downstream can repair a fact lost here.
 
 F8.5 closes the loop on the opening story and is the final slide.
 
-### 10.10 Expansion status
+### 10.10 Security — retrieval as an untrusted input channel
+
+Absent from v1.7 entirely, which was a gap: every retrieved chunk is text from
+elsewhere injected into a privileged prompt. See `docs/concepts/fundamentals.md`
+§5.
+
+| ID | Symptom | Cause | Fix / search term |
+|---|---|---|---|
+| F9.1 | Assistant follows instructions nobody typed | **Indirect prompt injection** — an indexed document contains instructions for the model | Sanitise retrieved content before it enters context |
+| F9.2 | Context data leaves the network | Model induced to construct an outbound URL (the M365 Copilot markdown-image exfiltration) | Constrain outbound capability; no arbitrary URL construction |
+| F9.3 | Internal corpus assumed safe | Tickets carry content pasted from customers, vendors and external logs — untrusted text **inside** the trusted boundary | Treat ticket bodies as untrusted input |
+| F9.4 | Agent with tool access behaves as an unmonitored privileged user | Private data + untrusted content + external communication (the "lethal trifecta") | Service-account rigour; break one leg of the trifecta |
+| F9.5 | Injected instruction cannot be traced to its source | No provenance kept at parse time | Element-level provenance (§9.1 P1) |
+| F9.6 | Retrieval bypasses document permissions | ACLs applied to the UI, not the index | Per-document filters at retrieval time (see F1.5) |
+
+There is **no complete defence**; these are layers. Stating that plainly is more
+useful to colleagues than a checklist implying the problem is solved.
+
+### 10.11 Expansion status
 
 **v1 → v1.5 (2026-07-30).** The *Document Intelligence* series (§16) added 16
 entries — F0.6–F0.9, F2.6, F3.7–F3.9, F4.8–F4.11, F5.4–F5.7 — and changed the
@@ -803,15 +836,26 @@ covering the volume-misallocation failure, escalation-as-product, root-cause
 overreach, and agent-memory hazards. **84 entries.** F7.6 is the one the author
 would have shipped without the interview.
 
-**Remaining research for v2:**
+**v1.7 → v1.8 (2026-08-02).** M0 research pass, partially complete. Added a
+security group F9.1–F9.6 (§10.10) and 8 entries — F0.10–F0.13, F2.7, F4.12,
+F4.13, F6.6. **98 entries.** Output artifact: `docs/concepts/fundamentals.md`.
 
-- Agentic RAG and the 2025–2026 shift away from vector search for code
-- Long-context models as a partial RAG substitute; the "lost in the middle" effect
-- GraphRAG, late-interaction retrieval (ColBERT), and structured retrieval
-- Contextual retrieval and chunk-context augmentation
-- Query transformation: rewriting, decomposition, HyDE, and their failure modes
-- Retrieval security: prompt injection through indexed documents, data exfiltration
+**Covered by v1.8:**
+
+- ✅ Agentic RAG and the 2025–2026 shift away from vector search for code
+- ✅ Long-context as a partial RAG substitute; "lost in the middle" (F6.6)
+- ✅ GraphRAG — with the 2026 benchmark showing +27.23 multi-hop vs +0.47 general
+- ✅ Contextual retrieval and chunk-context augmentation (F2.7)
+- ✅ Query transformation and its failure modes (F4.13)
+- ✅ Retrieval security: prompt injection, exfiltration (§10.10)
+- ✅ Adaptive retrieval — Self-RAG, CRAG, FLARE (F0.13)
+
+**Remaining for v2:**
+
+- Late-interaction retrieval (ColBERT) and multi-vector indexing
 - Evaluation frameworks and their known weaknesses (RAGAS and similar)
+- Visual-retrieval failure modes (ColPali/ColQwen2) — deferred since this build
+  uses caption-and-index instead
 
 Multimodal retrieval is now **partly covered** by §9.1 (caption-and-index) and
 tier 5 of the decision matrix; what remains for v2 is the failure modes of
@@ -915,7 +959,7 @@ decisions than the reference architecture diagrams they will be shown.
 | Time | Segment |
 |---|---|
 | 0:00–0:10 | **The real story** — we gave NOC a knowledge base; they still call us |
-| 0:10–0:25 | **Concepts** — one pipeline diagram, no mathematics |
+| 0:10–0:25 | **Fundamentals** — why RAG vs the alternatives, the stages, and the evolution as a chain of failures. Material and cutting guidance: `docs/concepts/fundamentals.md` |
 | 0:25–0:40 | **Do you even need RAG? — run live.** Same question through agentic search over code and RAG over docs (§5.5). Each wins on its own material |
 | 0:40–1:20 | **Live demo — climbing the ladder, failure by failure** |
 | 1:20–1:30 | **The hard slice** — context packet and time-to-context (§7.4, §1.1) |
@@ -1025,7 +1069,7 @@ Each milestone gets its own implementation plan.
 
 | # | Milestone | Output |
 |---|---|---|
-| **M0** | Catalog research pass v2 (§10.10) — **moved to first** | Catalog v2; ladder confirmed before anything is built |
+| **M0** | Catalog research pass (§10.11) — **partially done in v1.8** | `docs/concepts/fundamentals.md`; catalog at 100 entries; ColBERT and eval-framework research still open |
 | **M1** | Corpus: authored source + render script + gold set + eval harness | Multi-format corpus with ground truth; harness runs |
 | **M1.5** | **Parsing ladder P0–P4** + NED/TEDS scoring | Text actually recovered before any retrieval work begins |
 | **M2** | Retrieval service, rungs L0–L3 | Hybrid retrieval, per-category matrix |
