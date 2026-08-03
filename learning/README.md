@@ -27,7 +27,7 @@ notebooks read `corpus/rendered/` like the real pipeline — never `corpus/sourc
 |---|---|---|
 | 01 | Fixed-size chunking, dense embedding, cosine search | Dense retrieval works for meaning — and wobbles on exact error codes |
 | 02 | BM25 from scratch, RRF fusion | BM25 is confident on exact tokens, blind across languages; fusing helps same-language but *hurts* cross-lingual — which is why routing (L4) exists |
-| 03 | Cross-lingual retrieval, `doc_id` grouping | A Vietnamese question finds the English runbook; three translations stop flooding top-k |
+| 03 | Cross-lingual retrieval, `doc_id` grouping, citation language | A Vietnamese question finds the English runbook; three translations stop flooding top-k; cite in the reader's language or flag the gap |
 | 04 | Cross-encoder reranking | Measure whether it helps — and whether the latency is worth it |
 | 05 | Grounded answer + the answer/escalate verdict | Refusing to guess; citing the source |
 
