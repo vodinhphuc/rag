@@ -84,35 +84,48 @@ verbs.
 
 | Ticket writes | Means | Documentation writes |
 |---|---|---|
-| `col2`, `col-02` | Collector node 2 | `sq-collector-02` |
+| `treo` | Service running but not responding | "not responding", "unresponsive", "service is running but no heartbeat" |
 | `văng` | Agent dropped off the fleet view | "Offline", "mất heartbeat" |
-| `nghẽn` | Collector back-pressure, queue congested | "back-pressure", "queue depth vượt ngưỡng" |
+| `nghẽn` | Collector back-pressure, agents throttled | "back-pressure", "agents throttled" |
 | `lỗi bắt tay` | mTLS handshake failure | `mTLS handshake failed` (English, from the log line) |
-| `kho` | The event store cluster | "event store", `sq-store` |
+| `tồn queue` | Queue backlog, events accumulating | "queue depth", "queue depth above threshold" |
 | `TTD` | Time To Detect | Used in both, never expanded |
 | `GA build` | The signed release build, vs `RC build` | — |
 | `EPP` | The legacy product SENTRIQ replaced | Docs only |
 
-**Why these are better traps than nicknames.** An invented nickname is a
-curiosity; an abbreviation gap is the failure every company actually has.
-`col2` and `sq-collector-02` share no token, so BM25 cannot bridge them, and
-dense retrieval bridges them only weakly. A vocabulary map fixes it instantly and
-costs nothing at query time — which is precisely the L5 argument.
+Vocabulary confirmed by the author (native speaker). Do not substitute
+"improved" alternatives — these are the words the team actually uses.
+
+**Why this is a real trap and not a curiosity.** None of these is exotic jargon.
+They are the ordinary vocabulary of typing into a ticket at 2 a.m., and every one
+of them is lexically disjoint from the documentation phrase that means the same
+thing. BM25 cannot bridge `treo` → "not responding", and dense retrieval bridges
+it only weakly across languages. A vocabulary map fixes it instantly and costs
+nothing at query time — which is precisely the L5 argument.
+
+Note the two queue terms are **not** synonyms, and tickets use them differently:
+
+- `nghẽn` is the *mechanism* — the collector is throttling agents (`SQ-2011`).
+- `tồn queue` is the *measurement* — how many events are backed up (queue depth).
+
+A queue can have `tồn queue` rising without `nghẽn` yet, which is exactly the
+distinction D08 and D09 turn on.
 
 Realistic ticket texture, for whoever authors the T-series:
 
-> `col2 nghẽn queue, agent văng hàng loạt từ 02:15`
+> `Agent văng hàng loạt từ 02:15, collector nghẽn`
+> `sq-agent treo trên 30 endpoint, restart mới lên lại`
+> `Tồn queue tăng liên tục không giảm, nghi kho không nhận ghi`
 > `Agent không lên lại sau restart, log toàn lỗi bắt tay`
-> `kho đầy, retention job chưa chạy xong`
 
-Note what a search over the documentation would do with those titles: none of
-`col2`, `văng`, `nghẽn`, `bắt tay` or `kho` appears anywhere in the runbooks that
-resolve them.
+Note what a documentation search does with those titles: none of `treo`, `văng`,
+`nghẽn`, `bắt tay` or `tồn queue` appears anywhere in the runbooks that resolve
+them.
 
-> **Register check needed.** These are drawn from common Vietnamese ops usage,
-> but the author is the native speaker and has final say. `văng` and `nghẽn` in
-> particular sit on a register boundary — natural in an internal ticket, wrong in
-> a formal report. Confirm before the T-series is written.
+> **Optional, not currently used.** An abbreviation gap (`col2` in tickets vs
+> `sq-collector-02` in docs) would be a second trap of the same family. It was
+> considered and dropped in favour of the verbs above. Add it only if the
+> vocabulary rung needs more signal than five terms provide.
 
 ---
 
@@ -238,7 +251,7 @@ Cross-check that every trap in spec §6.3 has a home.
 | Signal dilution | D04, one sentence buried in a long paragraph |
 | Negation | "which components do **not** talk to sq-store" → D18 |
 | Listing / counting | "how many P2 incidents touched sq-collector last quarter" → T-series |
-| Out-of-domain vocabulary | `col2`, `văng`, `nghẽn`, `lỗi bắt tay`, `kho` (§3) |
+| Out-of-domain vocabulary | `treo`, `văng`, `nghẽn`, `lỗi bắt tay`, `tồn queue` (§3) |
 | Table-only answer | D03, D05 (retry timeouts per component) |
 | Scanned-only answer | D07 |
 | Screenshot-only answer | D19, D20 |
