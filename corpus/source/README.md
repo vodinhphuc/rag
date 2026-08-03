@@ -48,6 +48,15 @@ natural writing, and unnatural text would make the language demos misleading.
 
 ## Internal vocabulary
 
-The nicknames in `BIBLE.md` §3 (`con bò`, `quạt`, `đứt tay`, `nhà kho`) appear in
-**tickets only, never in these documents.** That gap is the point: it is what the
-domain vocabulary map (spec §9.2, L5) exists to bridge.
+The ticket shorthand in `BIBLE.md` §3 — `col2`, `văng`, `nghẽn`, `lỗi bắt tay`,
+`kho` — appears in **tickets only, never in these documents.** Documents use the
+formal form (`sq-collector-02`, "Offline", "back-pressure", `mTLS handshake
+failed`, "event store").
+
+That gap is the point, and it is not exotic: it is the ordinary difference
+between how people write documentation and how they type into a ticket at 2 a.m.
+`col2` and `sq-collector-02` share no token, so BM25 cannot bridge them. It is
+what the domain vocabulary map (spec §9.2, L5) exists to fix.
+
+**When authoring documents, always use the formal form.** Introducing ticket
+shorthand into a runbook closes the gap and removes the trap.

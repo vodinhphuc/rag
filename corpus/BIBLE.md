@@ -74,21 +74,45 @@ This is the metadata-scoping trap.
 
 ## 3. Internal vocabulary
 
-Terms used in tickets but **never defined in the documentation** — the domain
+Terms used in tickets but **never used in the documentation** — the domain
 vocabulary trap (spec §9.2 L5). Retrieval only works once these are mapped.
 
-| Term | Actually means | Appears in |
-|---|---|---|
-| "con bò" | *sq-collector node 2*, nicknamed after its hostname `bo2` | Tickets only |
-| "quạt" | The relay fan-out job (`sq-relay` distribution) | Tickets only |
-| "đứt tay" | Agent-to-collector mTLS handshake failure | Tickets only |
-| "nhà kho" | The event store cluster | Tickets only |
-| `TTD` | Time To Detect | Docs and tickets, never expanded |
-| `EPP` | Endpoint Protection Platform (the older product SENTRIQ replaced) | Docs only |
-| `GA build` | The signed release build, vs `RC build` | Tickets only |
+The gap is not exotic jargon. It is the ordinary difference between how people
+**write documentation** and how they **type at 2 a.m. into a ticket**: formal
+hostnames become abbreviations, and English technical nouns acquire Vietnamese
+verbs.
 
-Vietnamese nicknames are realistic for a Vietnamese ops team and directly
-exercise the VI/EN cross-lingual requirement.
+| Ticket writes | Means | Documentation writes |
+|---|---|---|
+| `col2`, `col-02` | Collector node 2 | `sq-collector-02` |
+| `văng` | Agent dropped off the fleet view | "Offline", "mất heartbeat" |
+| `nghẽn` | Collector back-pressure, queue congested | "back-pressure", "queue depth vượt ngưỡng" |
+| `lỗi bắt tay` | mTLS handshake failure | `mTLS handshake failed` (English, from the log line) |
+| `kho` | The event store cluster | "event store", `sq-store` |
+| `TTD` | Time To Detect | Used in both, never expanded |
+| `GA build` | The signed release build, vs `RC build` | — |
+| `EPP` | The legacy product SENTRIQ replaced | Docs only |
+
+**Why these are better traps than nicknames.** An invented nickname is a
+curiosity; an abbreviation gap is the failure every company actually has.
+`col2` and `sq-collector-02` share no token, so BM25 cannot bridge them, and
+dense retrieval bridges them only weakly. A vocabulary map fixes it instantly and
+costs nothing at query time — which is precisely the L5 argument.
+
+Realistic ticket texture, for whoever authors the T-series:
+
+> `col2 nghẽn queue, agent văng hàng loạt từ 02:15`
+> `Agent không lên lại sau restart, log toàn lỗi bắt tay`
+> `kho đầy, retention job chưa chạy xong`
+
+Note what a search over the documentation would do with those titles: none of
+`col2`, `văng`, `nghẽn`, `bắt tay` or `kho` appears anywhere in the runbooks that
+resolve them.
+
+> **Register check needed.** These are drawn from common Vietnamese ops usage,
+> but the author is the native speaker and has final say. `văng` and `nghẽn` in
+> particular sit on a register boundary — natural in an internal ticket, wrong in
+> a formal report. Confirm before the T-series is written.
 
 ---
 
@@ -214,7 +238,7 @@ Cross-check that every trap in spec §6.3 has a home.
 | Signal dilution | D04, one sentence buried in a long paragraph |
 | Negation | "which components do **not** talk to sq-store" → D18 |
 | Listing / counting | "how many P2 incidents touched sq-collector last quarter" → T-series |
-| Out-of-domain vocabulary | "con bò", "quạt", "đứt tay" |
+| Out-of-domain vocabulary | `col2`, `văng`, `nghẽn`, `lỗi bắt tay`, `kho` (§3) |
 | Table-only answer | D03, D05 (retry timeouts per component) |
 | Scanned-only answer | D07 |
 | Screenshot-only answer | D19, D20 |
