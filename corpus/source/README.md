@@ -48,10 +48,19 @@ natural writing, and unnatural text would make the language demos misleading.
 
 ## Internal vocabulary
 
-The ticket shorthand in `BIBLE.md` §3 — `treo`, `văng`, `nghẽn`, `lỗi bắt tay`,
-`tồn queue` — appears in **tickets only, never in these documents.** Documents
-use the formal form ("not responding", "Offline", "back-pressure", `mTLS
-handshake failed`, "queue depth").
+The ticket shorthand in `BIBLE.md` §3 appears in **tickets only, never in these
+documents.** Two groups:
+
+| Never write in a document | Always write instead |
+|---|---|
+| `treo` | "not responding", "unresponsive" |
+| `văng` | "Offline", "mất heartbeat" |
+| `nghẽn` | "back-pressure", "agents throttled" |
+| `lỗi bắt tay` | `mTLS handshake failed` |
+| `tồn queue` | "queue depth" |
+| `whitelist` | **"exclusion"**, "exception" |
+| `sensor` | **"agent"**, `sq-agent` |
+| `FP` | "false positive" |
 
 That gap is the point, and it is not exotic: it is the ordinary difference
 between how people write documentation and how they type into a ticket at 2 a.m.
@@ -59,5 +68,7 @@ Every one of those words is lexically disjoint from the doc phrase meaning the
 same thing, so BM25 cannot bridge them. It is what the domain vocabulary map
 (spec §9.2, L5) exists to fix.
 
-**When authoring documents, always use the formal form.** Introducing ticket
-shorthand into a runbook closes the gap and removes the trap.
+**When authoring documents, always use the right-hand column.** Introducing
+ticket shorthand into a runbook closes the gap and removes the trap. `whitelist`
+in particular must never appear — D10 is a whole runbook about exclusions and
+its value as a trap depends on never using the word a ticket would use.

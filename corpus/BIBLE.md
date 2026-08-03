@@ -82,16 +82,41 @@ The gap is not exotic jargon. It is the ordinary difference between how people
 hostnames become abbreviations, and English technical nouns acquire Vietnamese
 verbs.
 
+Two kinds, and both are needed. **Vietnamese ops verbs** describe what is
+happening; **English EDR terms** name the thing being operated on. A ticket
+mixes them freely — `sensor treo`, `whitelist cho path này` — while documentation
+uses neither.
+
+**Vietnamese ops verbs** — the state or symptom:
+
 | Ticket writes | Means | Documentation writes |
 |---|---|---|
-| `treo` | Service running but not responding | "not responding", "unresponsive", "service is running but no heartbeat" |
+| `treo` | Service running but not responding | "not responding", "unresponsive" |
 | `văng` | Agent dropped off the fleet view | "Offline", "mất heartbeat" |
 | `nghẽn` | Collector back-pressure, agents throttled | "back-pressure", "agents throttled" |
 | `lỗi bắt tay` | mTLS handshake failure | `mTLS handshake failed` (English, from the log line) |
 | `tồn queue` | Queue backlog, events accumulating | "queue depth", "queue depth above threshold" |
+
+**EDR terminology mismatches** — the thing itself. These are the entries an
+audience recognises immediately, because they have the same mismatch at work:
+
+| Ticket writes | Means | Documentation writes | Why the gap exists |
+|---|---|---|---|
+| `whitelist` | Stop scanning this path or hash | **"exclusion"**, "exception" | The universal EDR mismatch. Every ticket says whitelist; every vendor doc says exclusion |
+| `sensor` | The endpoint agent | **"agent"**, `sq-agent` | The legacy `EPP` product called it a sensor. The team migrated; the word did not |
+| `FP` | False positive | "false positive", "benign detection" | Nobody types it in full at 2 a.m. |
+
+| Acronym | Means | Where |
+|---|---|---|
 | `TTD` | Time To Detect | Used in both, never expanded |
-| `GA build` | The signed release build, vs `RC build` | — |
-| `EPP` | The legacy product SENTRIQ replaced | Docs only |
+| `GA build` | The signed release build, vs `RC build` | Tickets only |
+| `EPP` | The legacy product SENTRIQ replaced — origin of `sensor` | Docs only |
+
+**`whitelist` is the strongest entry in the table.** D10 is a runbook entirely
+about exclusion conflicts and never once uses the word *whitelist*. A ticket
+saying `whitelist cho path này` therefore fails against the exact document that
+resolves it — a failure the audience will recognise from their own systems within
+seconds, which is what makes it worth a demo slot.
 
 Vocabulary confirmed by the author (native speaker). Do not substitute
 "improved" alternatives — these are the words the team actually uses.
@@ -113,19 +138,21 @@ distinction D08 and D09 turn on.
 
 Realistic ticket texture, for whoever authors the T-series:
 
-> `Agent văng hàng loạt từ 02:15, collector nghẽn`
-> `sq-agent treo trên 30 endpoint, restart mới lên lại`
-> `Tồn queue tăng liên tục không giảm, nghi kho không nhận ghi`
-> `Agent không lên lại sau restart, log toàn lỗi bắt tay`
+> `Sensor văng hàng loạt từ 02:15, collector nghẽn`
+> `Sensor treo trên 30 endpoint, restart mới lên lại`
+> `Tồn queue tăng liên tục không giảm, nghi store không nhận ghi`
+> `Sensor không lên lại sau restart, log toàn lỗi bắt tay`
+> `Xin whitelist cho path D:\build\*, quét chậm cả máy`
+> `Alert này FP, rule mới deploy hôm qua`
 
-Note what a documentation search does with those titles: none of `treo`, `văng`,
-`nghẽn`, `bắt tay` or `tồn queue` appears anywhere in the runbooks that resolve
-them.
+Note what a documentation search does with those titles: not one of `treo`,
+`văng`, `nghẽn`, `bắt tay`, `tồn queue`, `sensor`, `whitelist` or `FP` appears
+anywhere in the runbooks that resolve them.
 
-> **Optional, not currently used.** An abbreviation gap (`col2` in tickets vs
-> `sq-collector-02` in docs) would be a second trap of the same family. It was
-> considered and dropped in favour of the verbs above. Add it only if the
-> vocabulary rung needs more signal than five terms provide.
+**Rejected: hostname abbreviations** (`col2` for `sq-collector-02`). Mechanically
+a valid gap, but it teaches an audience nothing — it is an invented hostname from
+a fictional product, so nobody in the room recognises it and the demo has to stop
+and explain itself. Every entry above is one they already have at work.
 
 ---
 
@@ -251,7 +278,7 @@ Cross-check that every trap in spec §6.3 has a home.
 | Signal dilution | D04, one sentence buried in a long paragraph |
 | Negation | "which components do **not** talk to sq-store" → D18 |
 | Listing / counting | "how many P2 incidents touched sq-collector last quarter" → T-series |
-| Out-of-domain vocabulary | `treo`, `văng`, `nghẽn`, `lỗi bắt tay`, `tồn queue` (§3) |
+| Out-of-domain vocabulary | Verbs: `treo`, `văng`, `nghẽn`, `lỗi bắt tay`, `tồn queue`. EDR terms: `whitelist`→exclusion (D10), `sensor`→agent, `FP` (§3) |
 | Table-only answer | D03, D05 (retry timeouts per component) |
 | Scanned-only answer | D07 |
 | Screenshot-only answer | D19, D20 |

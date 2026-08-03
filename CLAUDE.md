@@ -124,12 +124,15 @@ Correcting them silently destroys the demo:
   That is the lesson — metadata saves you, prose does not.
 - **`D08` and `D09` open with a byte-identical symptom paragraph.** Intentional.
 - **`D07` renders scanned**, so it extracts to nothing without OCR.
-- **Ticket shorthand** (`treo`, `văng`, `nghẽn`, `lỗi bắt tay`, `tồn queue` —
-  BIBLE §3) appears in **tickets only, never in documents**, which use the formal
-  form ("not responding", "Offline", "back-pressure", "queue depth"). Writing
-  shorthand into a runbook closes the gap and removes the trap. This vocabulary
-  was set by the author, who is the native speaker — **do not substitute
-  alternatives.**
+- **Ticket shorthand** (BIBLE §3) appears in **tickets only, never in documents.**
+  Vietnamese verbs `treo`, `văng`, `nghẽn`, `lỗi bắt tay`, `tồn queue`; EDR terms
+  `whitelist`, `sensor`, `FP`. Documents always use the formal form — "not
+  responding", "Offline", "back-pressure", "queue depth", **"exclusion"**,
+  **"agent"**, "false positive". Writing shorthand into a runbook closes the gap
+  and removes the trap; `whitelist` is the one to watch, because D10 is a whole
+  runbook about exclusions whose value depends on never using that word. This
+  vocabulary was set by the author, who is the native speaker and the domain
+  expert — **do not substitute alternatives.**
 
 If a change seems to require fixing one of these, it is more likely the change is
 wrong.
