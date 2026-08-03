@@ -205,7 +205,7 @@ for src in "$SRC"/*.md; do
   [[ -n "$filter" && "$base" != "$filter".* ]] && continue
 
   fmt="$(fm "$src" render)"
-  [[ -z "$fmt" ]] && { echo "  ! $base has no render: field; skipping" >&2; ((skipped++)); continue; }
+  [[ -z "$fmt" ]] && { echo "  ! $base has no render: field; skipping" >&2; skipped=$((skipped+1)); continue; }
   footer="$(fm "$src" footer)"
 
   printf "%-14s -> %s\n" "$base" "$fmt"
@@ -217,9 +217,9 @@ for src in "$SRC"/*.md; do
     pdf-scanned) render_pdf_scanned "$src" "$base" ;;
     png)         render_png         "$src" "$base" ;;
     xlsx)        render_xlsx        "$src" "$base" ;;
-    *) echo "  ! unknown render format '$fmt' for $base" >&2; ((skipped++)); continue ;;
+    *) echo "  ! unknown render format '$fmt' for $base" >&2; skipped=$((skipped+1)); continue ;;
   esac
-  ((rendered++))
+  rendered=$((rendered+1))
 done
 
 echo
