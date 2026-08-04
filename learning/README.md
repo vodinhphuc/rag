@@ -32,6 +32,7 @@ notebooks read `corpus/rendered/` like the real pipeline — never `corpus/sourc
 | 05 | Cross-encoder reranking (L7) | Measure whether it helps — and whether the latency is worth it |
 | 06 | Grounded answer + the answer/escalate verdict (L8) | Refusing to guess; citing the source in the reader's language |
 | 07 | Retrieval over the incident history (tickets) | A shorthand alert matches past tickets with no vocabulary gap; the matched precedent decides answer vs escalate, and hands a warm start to the hard slice |
+| 08 | Parsing ladder P0→P3 (pymupdf, easyocr) | A scanned runbook extracts to 0 chars — indexed but silently unreachable — then OCR recovers 92%, measured against the held-back source; the document becomes retrievable (demo block 1) |
 
 The arc grows as rungs are reached, not all up front — the same discipline as the
 spec's ladder (§9): climb only when the current rung is shown to fail. Notebook 02
@@ -39,12 +40,12 @@ was meant to end on "hybrid wins"; measuring it forced a rung (routing) into
 existence that the plan did not have. That is the method working.
 
 Not yet built, each waiting on its inputs rather than guessed:
-- **Parsing ladder (P0–P4)** — needs the PDF/DOCX/scanned corpus loaded (D07, D10,
-  D12, D16). Would also let the vocabulary map (L5) be measured against the whole
-  document set, and is the seminar's demo block 1 (the scanned doc that is indexed
-  but unreachable).
+- **Parsing P1/P2/P4** — notebook 08 covers P0 (silent failure) and P3 (OCR). P1
+  reading-order needs the two-column D01, P2 tables need D03/D05, and P4 figure
+  captioning needs the hosted vision model (spec §5.3).
 - **Vocabulary map (L5)** — partially seen in notebook 07 (ticket→ticket needs no
-  map; ticket→formal-runbook does). A full treatment needs the parsed docs above.
+  map; ticket→formal-runbook does). A full treatment folds the OCR'd/parsed docs
+  from notebook 08 into the document index.
 - **Embedding head-to-head (L6)** — needs the hosted `Qwen3-Embedding-4B` to
   compare against bge-m3 on the same index.
 
