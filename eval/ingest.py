@@ -46,12 +46,26 @@ def _pdf_ocr(path):
 
 
 def _docx_text(path):
+    """Extract in DOCUMENT ORDER — paragraphs and tables interleaved.
+
+    python-docx's .paragraphs and .tables are separate flat lists; iterating them
+    that way appends every table after every paragraph, moving a table away from
+    the heading that introduces it. That is a real reading-order defect (it hurts
+    retrieval, and it wrecks a naive text-vs-source diff). We walk the body's XML
+    children instead so order is preserved.
+    """
     import docx
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+    from docx.oxml.ns import qn
     d = docx.Document(path)
-    out = [p.text for p in d.paragraphs]
-    for t in d.tables:                                   # flatten tables to rows
-        for row in t.rows:
-            out.append(" | ".join(c.text for c in row.cells))
+    out = []
+    for child in d.element.body.iterchildren():
+        if child.tag == qn("w:p"):
+            out.append(Paragraph(child, d).text)
+        elif child.tag == qn("w:tbl"):
+            for row in Table(child, d).rows:
+                out.append(" | ".join(c.text for c in row.cells))
     return "\n".join(out)
 
 
