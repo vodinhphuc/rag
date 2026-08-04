@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
+    "easyocr>=1.7.2",
     "numpy>=2.5.1",
+    "pymupdf>=1.28.0",
     "sentence-transformers>=5.6.1",
 ]
