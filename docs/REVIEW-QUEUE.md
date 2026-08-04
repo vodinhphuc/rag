@@ -7,6 +7,20 @@ before the corpus is used to *measure* anything or shown at the seminar.
 Priority key: **[P1]** verify before measuring/demoing · **[P2]** verify before
 polishing · **[P3]** nice to confirm.
 
+## The two things that actually block real measurement
+
+1. **[P1] Real NOC questions** → `eval/questions.yaml` (see §B). The harness is
+   built; it just needs real questions instead of my illustrative ones.
+2. **[P1] Native Vietnamese/Japanese review** of the corpus (see §A). Needed
+   before any cross-lingual number means anything.
+
+Everything else is polish or confirmation. What is DONE and needs no further work
+from me: Path A (8 notebooks, all measured on the 3090), the full corpus (~25 docs
++ 50 tickets, rendered, traps verified), the eval harness (ingest + matrix +
+parsing metric), and the repo README. Optional remaining: vi/ja versions of
+D01/D04/D13 (BIBLE §6.1 completeness — flooding is already demonstrated via D06,
+so low value); parsing P1 (needs a TeX engine) and P4 (needs a vision model).
+
 ---
 
 ## A. Vietnamese language — native review **[P1]**
@@ -74,6 +88,17 @@ where noted, but worth a spot check against `corpus/BIBLE.md` §7:
 ---
 
 ## Work log (what I did, newest first)
+
+### 2026-08-05 — top-level README + parsing metric
+- `README.md` — the colleague-facing take-home: quick start, the decision matrix
+  (which stack for which problem), the adoption checklist, and the two organising
+  ideas. **[P2] read it as if you were a colleague cloning this cold — does it
+  orient you?**
+- `eval/parsing.py` — parsing recovery vs source. Surfaced and fixed a real docx
+  extraction bug (tables were moved to the end, away from their headings);
+  document-order extraction now gives 100% recovery on all docx, and it improves
+  retrieval too. Remaining honest losses: xlsx drops prose at render (D05/D17
+  low), figures need P4.
 
 ### 2026-08-05 — eval harness scaffold (`eval/`)
 - `eval/ingest.py` — full-corpus ingestion: parses every format (PDF/DOCX/XLSX
