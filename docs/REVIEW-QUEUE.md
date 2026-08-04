@@ -75,6 +75,23 @@ where noted, but worth a spot check against `corpus/BIBLE.md` §7:
 
 ## Work log (what I did, newest first)
 
+### 2026-08-05 — eval harness scaffold (`eval/`)
+- `eval/ingest.py` — full-corpus ingestion: parses every format (PDF/DOCX/XLSX
+  text, OCR for the scan), attaches metadata from source front matter, and
+  concatenates multi-sheet workbooks (fixing an only-first-sheet bug in my own
+  ingest, F1.14). 182 chunks (132 doc + 50 ticket). Figures excluded — they need
+  P4 captioning.
+- `eval/run.py` — scores L0–L4 against the gold questions as a **rung ×
+  failure-mode matrix** (spec §8.4), never a headline number. Also reports open
+  failure modes and refusal accuracy on the unanswerable questions.
+- `eval/questions.yaml` — **18 ILLUSTRATIVE questions. [P1] REPLACE with 20–40
+  real NOC questions** (F0.4). The harness is done; only the questions need you.
+- Current illustrative result (means little until real questions): L2/L4 ≈ 87%
+  recall@5; `negation` is an open failure mode (needs structure/captioning, not
+  retrieval); refusal 2/3 — the counting question "how many P2 incidents" scores
+  above the gate, correctly flagged as a false-answer risk that needs a structured
+  query, not retrieval. **[P3] confirm this matches your intuition.**
+
 ### 2026-08-05 — authored the remaining documents
 - Added D01–D05, D13–D15, D17–D25 (English primaries) + D14.vi. Corpus source is
   now ~25 documents; 31 rendered files. **[P2] review the new English prose for

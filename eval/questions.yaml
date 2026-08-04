@@ -1,0 +1,62 @@
+# Gold question set — the measuring stick
+#
+# Each question has a KNOWN correct source (a doc_id like "D06", or a ticket id
+# like "T22"), a failure-mode category, and the expected verdict. eval/run.py
+# scores every rung of the ladder against these, reported as a rung x
+# failure-mode matrix (spec section 8.4) — never a single headline number.
+#
+# ▲ THE QUESTIONS BELOW ARE ILLUSTRATIVE — my questions about my corpus. They
+#   validate the harness; they cannot judge real quality (catalog F0.4). Replace
+#   and extend them with 20-40 REAL NOC questions mined from actual tickets/chat,
+#   each tagged with the document or past incident that answers it. That is the
+#   single highest-value thing the harness needs. See docs/REVIEW-QUEUE.md B.
+#
+# Fields:
+#   id        unique
+#   q         the question, as an operator would ask it
+#   lang      vi | en | ja  (the language the question is asked in)
+#   category  factual | cross_lingual | error_code | routing | table | negation |
+#             listing | dilution | repeat | unanswerable
+#   expect    doc_id or ticket id that answers it (list if several are acceptable);
+#             null for unanswerable
+#   verdict   ANSWER | ESCALATE   (what the product should decide)
+#   severity  P1..P4 | null
+
+questions:
+  # --- factual, same language -------------------------------------------------
+  - {id: Q01, q: "how do I restart the agent when it shows offline", lang: en, category: factual, expect: D06, verdict: ANSWER, severity: P3}
+  - {id: Q02, q: "endpoint bị offline thì làm gì", lang: vi, category: factual, expect: D06, verdict: ANSWER, severity: P3}
+  - {id: Q03, q: "how do I install the agent on Linux with Secure Boot", lang: en, category: factual, expect: D02, verdict: ANSWER, severity: P3}
+
+  # --- cross-lingual: asked in VI, answer only in an EN-only doc ---------------
+  - {id: Q04, q: "làm sao xử lý khi rule phát hiện không biên dịch được", lang: vi, category: cross_lingual, expect: D11, verdict: ANSWER, severity: P2}
+  - {id: Q05, q: "quy trình triage alert của SOC", lang: vi, category: cross_lingual, expect: D13, verdict: ANSWER, severity: P2}
+
+  # --- exact error code / identifier -----------------------------------------
+  - {id: Q06, q: "SQ-6008", lang: en, category: error_code, expect: D09, verdict: ESCALATE, severity: P1}
+  - {id: Q07, q: "what is error SQ-7005", lang: en, category: error_code, expect: D15, verdict: ANSWER, severity: P3}
+
+  # --- routing / metadata scoping (look-alikes) -------------------------------
+  - {id: Q08, q: "agents offline, telemetry stopped, alert from sq-store", lang: en, category: routing, expect: D09, verdict: ESCALATE, severity: P1}
+  - {id: Q09, q: "agents offline, telemetry stopped, alert from sq-collector", lang: en, category: routing, expect: D08, verdict: ANSWER, severity: P2}
+
+  # --- table-only answer (parsing P2) ----------------------------------------
+  - {id: Q10, q: "what drain window does the store need during upgrade", lang: en, category: table, expect: D03, verdict: ANSWER, severity: P3}
+  - {id: Q11, q: "which port does the agent use to reach the policy service", lang: en, category: table, expect: D05, verdict: ANSWER, severity: P3}
+
+  # --- negation (retrieval cannot; needs structure) ---------------------------
+  - {id: Q12, q: "which components do NOT connect to the event store", lang: en, category: negation, expect: D18, verdict: ANSWER, severity: P3}
+
+  # --- listing / counting (retrieval is the wrong tool) -----------------------
+  - {id: Q13, q: "how many P2 incidents touched sq-collector", lang: en, category: listing, expect: null, verdict: ESCALATE, severity: null}
+
+  # --- signal dilution (answer buried in a long paragraph) --------------------
+  - {id: Q14, q: "does a console outage mean endpoints are unprotected", lang: en, category: dilution, expect: D04, verdict: ANSWER, severity: P3}
+
+  # --- repeat incident (answer against ticket history) ------------------------
+  - {id: Q15, q: "xin whitelist path build vì agent quét chậm", lang: vi, category: repeat, expect: T22, verdict: ANSWER, severity: P3}
+  - {id: Q16, q: "collector nghẽn, agent văng hàng loạt", lang: vi, category: repeat, expect: [T03, T18], verdict: ANSWER, severity: P2}
+
+  # --- unanswerable (must refuse, not fabricate) ------------------------------
+  - {id: Q17, q: "how do I enable ARM Mac support for the agent", lang: en, category: unanswerable, expect: null, verdict: ESCALATE, severity: null}
+  - {id: Q18, q: "what is the enterprise licensing price", lang: en, category: unanswerable, expect: null, verdict: ESCALATE, severity: null}

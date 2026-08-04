@@ -6,6 +6,9 @@ requires-python = ">=3.13"
 dependencies = [
     "easyocr>=1.7.2",
     "numpy>=2.5.1",
+    "openpyxl>=3.1.5",
     "pymupdf>=1.28.0",
+    "python-docx>=1.2.0",
+    "pyyaml>=6.0.3",
     "sentence-transformers>=5.6.1",
 ]
