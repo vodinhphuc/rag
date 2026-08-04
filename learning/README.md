@@ -31,15 +31,22 @@ notebooks read `corpus/rendered/` like the real pipeline — never `corpus/sourc
 | 04 | Query routing + metadata scoping (L4) | Route cross-lingual to dense-only (undoing 02's hybrid dilution); separate look-alike docs by the component that raised the alert |
 | 05 | Cross-encoder reranking (L7) | Measure whether it helps — and whether the latency is worth it |
 | 06 | Grounded answer + the answer/escalate verdict (L8) | Refusing to guess; citing the source in the reader's language |
+| 07 | Retrieval over the incident history (tickets) | A shorthand alert matches past tickets with no vocabulary gap; the matched precedent decides answer vs escalate, and hands a warm start to the hard slice |
 
 The arc grows as rungs are reached, not all up front — the same discipline as the
 spec's ladder (§9): climb only when the current rung is shown to fail. Notebook 02
 was meant to end on "hybrid wins"; measuring it forced a rung (routing) into
 existence that the plan did not have. That is the method working.
 
-Two rungs from the spec are demonstrated at seminar scale rather than here: the
-domain vocabulary map (L5) needs the ticket corpus, and the embedding head-to-head
-(L6) needs the hosted Qwen model. They are noted where they belong in the arc.
+Not yet built, each waiting on its inputs rather than guessed:
+- **Parsing ladder (P0–P4)** — needs the PDF/DOCX/scanned corpus loaded (D07, D10,
+  D12, D16). Would also let the vocabulary map (L5) be measured against the whole
+  document set, and is the seminar's demo block 1 (the scanned doc that is indexed
+  but unreachable).
+- **Vocabulary map (L5)** — partially seen in notebook 07 (ticket→ticket needs no
+  map; ticket→formal-runbook does). A full treatment needs the parsed docs above.
+- **Embedding head-to-head (L6)** — needs the hosted `Qwen3-Embedding-4B` to
+  compare against bge-m3 on the same index.
 
 ## Model
 

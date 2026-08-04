@@ -6,6 +6,7 @@ and gets imported. Nothing new is hidden — every line here appears, explained,
 notebook 01.
 """
 import re
+import json
 import math
 from pathlib import Path
 from collections import Counter
@@ -15,6 +16,20 @@ from sentence_transformers import SentenceTransformer
 ROOT = Path(__file__).resolve().parent.parent
 RENDERED = ROOT / "corpus" / "rendered"
 SOURCE = ROOT / "corpus" / "source"
+TICKETS = ROOT / "corpus" / "tickets" / "tickets.jsonl"
+
+
+def load_tickets():
+    """Load the incident tickets as records, and as searchable chunks.
+
+    Returns (rows, chunks). Each chunk is {doc_id, text, meta} where text is the
+    ticket's title + detail (the NOC-written shorthand) and meta is the whole
+    record, so the same DenseIndex/BM25Index used for documents works over the
+    incident history unchanged.
+    """
+    rows = [json.loads(line) for line in TICKETS.read_text(encoding="utf-8").splitlines() if line.strip()]
+    chunks = [{"doc_id": r["id"], "text": f"{r['title']} {r['detail']}", "meta": r} for r in rows]
+    return rows, chunks
 
 
 def read_front_matter(path):
