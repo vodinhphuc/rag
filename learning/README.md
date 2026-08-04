@@ -28,12 +28,18 @@ notebooks read `corpus/rendered/` like the real pipeline — never `corpus/sourc
 | 01 | Fixed-size chunking, dense embedding, cosine search | Dense retrieval works for meaning — and wobbles on exact error codes |
 | 02 | BM25 from scratch, RRF fusion | BM25 is confident on exact tokens, blind across languages; fusing helps same-language but *hurts* cross-lingual — which is why routing (L4) exists |
 | 03 | Cross-lingual retrieval, `doc_id` grouping, citation language | A Vietnamese question finds the English runbook; three translations stop flooding top-k; cite in the reader's language or flag the gap |
-| 04 | Cross-encoder reranking | Measure whether it helps — and whether the latency is worth it |
-| 05 | Grounded answer + the answer/escalate verdict | Refusing to guess; citing the source |
+| 04 | Query routing + metadata scoping (L4) | Route cross-lingual to dense-only (undoing 02's hybrid dilution); separate look-alike docs by the component that raised the alert |
+| 05 | Cross-encoder reranking (L7) | Measure whether it helps — and whether the latency is worth it |
+| 06 | Grounded answer + the answer/escalate verdict (L8) | Refusing to guess; citing the source in the reader's language |
 
-Later notebooks are written as each rung is reached, not all up front — the same
-discipline as the spec's ladder (§9): climb only when the current rung is shown
-to fail.
+The arc grows as rungs are reached, not all up front — the same discipline as the
+spec's ladder (§9): climb only when the current rung is shown to fail. Notebook 02
+was meant to end on "hybrid wins"; measuring it forced a rung (routing) into
+existence that the plan did not have. That is the method working.
+
+Two rungs from the spec are demonstrated at seminar scale rather than here: the
+domain vocabulary map (L5) needs the ticket corpus, and the embedding head-to-head
+(L6) needs the hosted Qwen model. They are noted where they belong in the arc.
 
 ## Model
 
