@@ -37,7 +37,7 @@ uv run python eval/parsing.py                 # parsing quality vs the source
 | `learning/` | **Path A** — 8 notebooks building the ladder from scratch, each climbing one rung and showing one measured failure. Start at `learning/README.md`. |
 | `corpus/` | The invented SENTRIQ corpus: `source/` (markdown, ground truth, never indexed), `rendered/` (the binaries the pipeline reads), `tickets/` (50 incidents), `BIBLE.md` (the consistency reference). |
 | `eval/` | The measuring stick: `ingest.py` (parse every format), `run.py` (rung × failure-mode matrix), `parsing.py` (recovery vs source), `questions.yaml` (the gold set — **replace with real questions**). |
-| `docs/` | The design spec (`superpowers/specs/`), the seminar narrative (`talk/logic-flow.md`), the concepts (`concepts/fundamentals.md`), and `REVIEW-QUEUE.md`. |
+| `docs/` | The design spec (`superpowers/specs/`), the seminar narrative (`talk/logic-flow.md`), the concepts (`concepts/fundamentals.md`), the author's action list (`YOUR-TASKS.md`), and the build log (`REVIEW-QUEUE.md`). |
 
 ## The two ideas that organise everything
 

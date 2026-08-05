@@ -20,6 +20,32 @@ The spec's **§10 failure catalog (115 entries)** is a first-class deliverable, 
 documentation about the code. New failure modes discovered during work belong in
 it, with the standard shape: symptom → cause → fix → search term.
 
+For orientation as a colleague or a fresh session: `README.md` (what the repo is,
+how to run it), `docs/YOUR-TASKS.md` (the author's action list — what still needs
+a human), `docs/REVIEW-QUEUE.md` (the log of what was built and why).
+
+## Current state (as of 2026-08)
+
+- **Path A — the learning track — is BUILT and verified on the RTX 3090.**
+  `learning/01…08` implement the whole ladder from scratch: dense retrieval,
+  BM25+RRF fusion, cross-lingual + `doc_id` grouping, routing + metadata scoping,
+  the reranker experiment, the answer/escalate verdict, retrieval over incident
+  history, and the parsing ladder P0→P3. `learning/_shared.py` packages the
+  reusable pieces (indexes, tokenizer, loaders). Start at `learning/README.md`.
+- **The corpus is authored.** ~25 invented "SENTRIQ" documents in `corpus/source/`
+  (rendered to `corpus/rendered/`), plus 50 incident tickets in
+  `corpus/tickets/tickets.jsonl`. Traps verified.
+- **The eval harness is built** (`eval/`) — full-corpus ingestion, the rung ×
+  failure-mode matrix, and a parsing-recovery metric — but it runs on
+  **illustrative** questions.
+- **Two things block real measurement, both need the author:** real NOC questions
+  for `eval/questions.yaml`, and native Vietnamese/Japanese review of the corpus.
+  See `docs/YOUR-TASKS.md`.
+- **Not built:** the demo-stack retrieval **service** (`service/`) and its
+  interfaces (OpenAI-compatible API, MCP, Open WebUI, Flowise) — specified in spec
+  §13; parsing **P1** (two-column reading order, needs a TeX engine) and **P4**
+  (figure captioning, needs a vision model).
+
 ## Critical: this repository is public
 
 `github.com/vodinhphuc/rag` is **public**. `corpus/private/` holds real internal
@@ -46,20 +72,35 @@ script exits non-zero.
 
 ## Commands
 
+Python work uses **`uv`** (project at repo root: `pyproject.toml`, `uv.lock`). The
+learning notebooks and eval assume a **GPU** and download models on first run
+(`bge-m3`, `bge-reranker-v2-m3`, easyocr). Do not `pip install` — use `uv add` /
+`uv run`.
+
 ```bash
+# --- corpus: render markdown source -> the messy binaries the pipeline reads ---
 bash scripts/render_corpus.sh --check     # report tool availability, exit
 bash scripts/render_corpus.sh             # render every source document
-bash scripts/render_corpus.sh D06         # render one doc_id, all languages
+bash scripts/render_corpus.sh D06         # one doc_id, all languages
 
-bash scripts/check-no-private.sh          # run the leak guard manually
+# --- Path A: learning notebooks (# %% cell format — run as scripts OR open in VS Code) ---
+uv run learning/01_naive_retrieval.py     # ... through 08; arc in learning/README.md
+
+# --- eval harness ---
+uv run python eval/run.py                 # rung x failure-mode matrix (spec §8.4)
+uv run python eval/parsing.py             # parsing recovery vs held-back source
+uv run python eval/ingest.py             # full-corpus ingestion (inspect what parses)
+
+# --- the leak guard (also installed as the pre-commit hook) ---
+bash scripts/check-no-private.sh
 ```
 
-Rendering needs `pandoc`, `imagemagick`, `img2pdf`, `libreoffice`,
-`poppler-utils`. `--check` reports which are missing.
-
-**There is no build, no linter and no test suite yet.** The eval harness
-(`eval/run.py`, `eval/parsing.py`) and the retrieval service (`service/`) are
-specified in §13 but not written. Do not invent commands for them.
+Rendering needs `pandoc`, `imagemagick`, `img2pdf`, `libreoffice`, `poppler-utils`
+(`--check` reports which are missing). **No linter or test suite** — verification
+is done by *running the notebooks/eval and checking the printed numbers against
+the prose* (every notebook's claims are copied from its actual run). The retrieval
+**service** and demo interfaces are specified (spec §13) but not built — do not
+invent commands for them.
 
 ## Architecture
 

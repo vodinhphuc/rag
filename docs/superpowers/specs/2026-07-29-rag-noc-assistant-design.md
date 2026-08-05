@@ -1507,7 +1507,12 @@ rag/
 
 ## 15. Milestones
 
-Each milestone gets its own implementation plan.
+Each milestone gets its own implementation plan. **This table is the plan, not the
+current status** — for what is actually built vs pending, see `CLAUDE.md` "Current
+state" and `docs/REVIEW-QUEUE.md`. In short (2026-08): **Path A** (the learning
+notebooks, `learning/01…08`) is built end to end from scratch; the **corpus** and
+**eval harness** (M1, M1.5) are built; the demo-track **service and interfaces**
+(M2–M6) are not.
 
 | # | Milestone | Output |
 |---|---|---|
